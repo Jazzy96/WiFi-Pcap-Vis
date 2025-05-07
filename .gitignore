@@ -1,0 +1,35 @@
+# Go项目相关
+# 编译生成的可执行文件
+pc_analyzer/pc_analyzer
+router_agent/router_agent_arm64
+
+# Protocol Buffers 生成的 Go 文件
+*.pb.go
+
+# Node.js/TypeScript 项目 (web_frontend/)
+# 依赖目录
+web_frontend/node_modules/
+
+# 构建产物目录
+web_frontend/dist/
+web_frontend/build/
+
+# 环境变量文件
+web_frontend/.env*
+
+# 日志文件
+web_frontend/npm-debug.log*
+web_frontend/yarn-error.log*
+
+# 通用忽略
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db
+
+# IDE/编辑器特定的配置文件/目录
+.vscode/
+.idea/
+
+# 临时文件或备份文件
+*.swp
+*~ 
