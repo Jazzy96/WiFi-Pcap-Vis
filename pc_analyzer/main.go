@@ -292,11 +292,11 @@ func main() {
 	}()
 
 	// Goroutine to periodically prune old entries from state manager
-	pruneTicker := time.NewTicker(1 * time.Minute) // Prune every minute
+	pruneTicker := time.NewTicker(30 * time.Second) // Prune every 30 seconds
 	defer pruneTicker.Stop()
 	go func() {
 		for range pruneTicker.C {
-			stateMgr.PruneOldEntries(5 * time.Minute) // Timeout of 5 minutes
+			stateMgr.PruneOldEntries(2 * time.Minute) // Timeout of 2 minutes
 			log.Println("Pruned old entries from state manager.")
 		}
 	}()

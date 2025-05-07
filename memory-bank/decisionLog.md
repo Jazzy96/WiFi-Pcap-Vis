@@ -6,6 +6,172 @@ This file records architectural and implementation decisions using a list format
 *
       
 ---
+### Decision (Debug - PC Analyzer Frame Parsing Reversion)
+[2025-05-07 23:30:00] - [Reversion: Remove GBK Fallback for SSID Decoding]
+
+**Rationale:**
+After implementing the GBK fallback for SSID decoding, user feedback indicated that it did not successfully decode the problematic SSIDs and resulted in similar unreadable output ("乱码"). Given that the fallback added complexity without providing the desired benefit in this specific case, the decision was made to revert the changes.
+
+**Details:**
+*   **Affected File:** `pc_analyzer/frame_parser/parser.go`
+*   **Change Made:**
+    *   The code block attempting GBK decoding within the `case layers.Dot11InformationElementIDSSID:` was removed.
+    *   The logic was restored to simply check `utf8.Valid(ieInfo)`. If false, `ssidContent` is set directly to `"<Invalid/Undecodable SSID>"`.
+    *   The unused imports for `golang.org/x/text/encoding/simplifiedchinese` and `golang.org/x/text/transform` were removed.
+*   **Expected Outcome:** The SSID parsing logic is simplified back to only validating UTF-8. Non-UTF-8 SSIDs will be consistently marked as `"<Invalid/Undecodable SSID>"`. This removes the unsuccessful GBK decoding attempt and associated dependencies.
+---
+### Decision (Debug - PC Analyzer Frame Parsing)
+[2025-05-07 23:24:00] - [Enhancement: Implement GBK Fallback for SSID Decoding]
+
+**Rationale:**
+User inquired about the possibility that SSIDs marked as `"<Invalid SSID Encoding>"` might be using a different encoding, such as GBK, rather than being purely invalid data. To potentially improve the display of SSIDs from networks configured with non-UTF-8 encodings common in certain regions, a fallback mechanism was implemented.
+
+**Details:**
+*   **Affected File:** `pc_analyzer/frame_parser/parser.go`
+*   **Dependencies Added:** `golang.org/x/text/encoding/simplifiedchinese`, `golang.org/x/text/transform` (via `go get` in `pc_analyzer` directory).
+*   **Change Made:**
+    *   In the `parsePacketLayers` function, within the `case layers.Dot11InformationElementIDSSID:` block:
+    *   If `utf8.Valid(ieInfo)` returns false:
+        1.  A GBK decoder (`simplifiedchinese.GBK.NewDecoder()`) is created.
+        2.  `transform.Bytes()` is used to attempt decoding `ieInfo` using the GBK decoder.
+        3.  If the GBK decoding succeeds without error, the resulting byte slice is converted to a string and assigned to `ssidContent`. An informational log (`INFO_SSID_PARSE`) is generated.
+        4.  If the GBK decoding fails, `ssidContent` is set to `"<Invalid/Undecodable SSID>"`, and a warning log (`WARN_SSID_PARSE`) including the GBK error is generated.
+    *   The final debug log (`DEBUG_SSID_PARSE`) now reports the final `ssidContent` regardless of the decoding path taken (UTF-8, GBK, Hidden, or Undecodable).
+*   **Expected Outcome:** The parser will now make a best effort to decode SSIDs that are not valid UTF-8 using the GBK encoding. This should increase the chances of correctly displaying SSIDs from networks using GBK, while still providing a clear indicator (`<Invalid/Undecodable SSID>`) if both UTF-8 and GBK decoding fail.
+---
+### Decision (Debug - PC Analyzer State Management)
+[2025-05-07 23:11:00] - [Bug Fix Strategy: Add Strictness Check for New BSS Creation from Beacons/Probes]
+
+**Rationale:**
+User logs confirmed that even after fixing the parser to handle truncated Probe Responses, BSS entries could still be created with missing critical information (SSID, Security, Capabilities). This happened when IE parsing of a Beacon or Probe Response frame was prematurely terminated due to encountering a malformed IE (e.g., incorrect length declaration), but the parser still returned a partial `ParsedFrameInfo`. To prevent these incomplete entries from polluting the state, the decision was made to add a quality check within the state manager before creating a new BSS.
+
+**Details:**
+*   **Affected File:** `pc_analyzer/state_manager/manager.go`
+*   **Change Made:**
+    *   In the `ProcessParsedFrame` function, within the logic block that handles creating a new BSS (`if !bssExists { ... }`) specifically for `MgmtBeacon` or `MgmtProbeResp` frames:
+    *   After `bss = NewBSSInfo(bssidStr)`, a check was added:
+        ```go
+        isSsidMissing := (parsedInfo.SSID == "" || parsedInfo.SSID == "[N/A]" || parsedInfo.SSID == "<Hidden SSID>" || parsedInfo.SSID == "<Invalid SSID Encoding>")
+        isSecurityMissing := len(parsedInfo.RSNRaw) == 0
+        areCapsMissing := parsedInfo.ParsedHTCaps == nil && parsedInfo.ParsedVHTCaps == nil
+
+        if isSsidMissing && isSecurityMissing && areCapsMissing {
+            log.Printf("WARN_STATE_MANAGER: Skipping creation of new BSS %s from %s due to severely incomplete information...", bssidStr, parsedInfo.FrameType.String())
+            bss = nil // Prevent adding to map and subsequent updates
+        } else {
+            sm.bssInfos[bssidStr] = bss // Add to map only if info is deemed sufficient
+            log.Printf("DEBUG_STATE_MANAGER: Created new BSS %s from %s", bssidStr, parsedInfo.FrameType.String())
+        }
+        ```
+*   **Expected Outcome:** The state manager will now be more selective when creating new BSS entries from Beacons or Probe Responses. If the frame parsing resulted in missing SSID, security (RSN), and capability information (likely due to IE parsing issues), the BSS entry will not be created, leading to a cleaner and more reliable BSS list. Updates to existing BSS entries are not affected by this specific check.
+---
+### Decision (Debug - PC Analyzer State Management)
+[2025-05-07 23:08:00] - [Configuration Change: Reduce Timeout for Pruning State Entries]
+
+**Rationale:**
+Following the increase in pruning frequency, the user requested a shorter timeout for entries to be considered old, aiming for even faster removal of outdated STA/BSS information. The timeout was reduced from 5 minutes to 2 minutes.
+
+**Details:**
+*   **Affected File:** `pc_analyzer/main.go`
+*   **Change Made:**
+    *   The timeout argument passed to `stateMgr.PruneOldEntries()` within the `pruneTicker` goroutine was changed from `5 * time.Minute` to `2 * time.Minute`.
+    *   The ticker frequency remains at `30 * time.Second`.
+*   **Expected Outcome:** BSS/STA entries that have not been seen for more than 2 minutes will now be pruned by the state manager during its next 30-second pruning cycle. This should make the displayed data reflect changes in the wireless environment more rapidly.
+---
+### Decision (Debug - PC Analyzer State Management)
+[2025-05-07 23:06:00] - [Configuration Change: Increase Pruning Frequency for State Entries]
+
+**Rationale:**
+User observed potentially outdated STA entries and requested a more responsive aging mechanism. The existing `PruneOldEntries` function in `state_manager.go` was called by a ticker in `main.go` every 1 minute, with a 5-minute timeout for entries. To make the pruning more reactive, the ticker frequency was increased.
+
+**Details:**
+*   **Affected File:** `pc_analyzer/main.go`
+*   **Change Made:**
+    *   The `pruneTicker` initialization was changed from `time.NewTicker(1 * time.Minute)` to `time.NewTicker(30 * time.Second)`.
+    *   The timeout argument passed to `stateMgr.PruneOldEntries()` remains `5 * time.Minute`.
+*   **Expected Outcome:** The state manager will now check for and prune old BSS/STA entries every 30 seconds instead of every minute. This should lead to a faster removal of entries that have not been seen for longer than the 5-minute timeout period, making the displayed data more current.
+---
+### Decision (Debug - PC Analyzer Frame Parsing)
+[2025-05-07 23:00:00] - [Bug Fix Strategy: Reject Incomplete Beacon/ProbeResp Frames in Parser]
+
+**Rationale:**
+User logs showed that BSS entries were being created with missing information (SSID "(Hidden)", security "Open", no capabilities) due to `MgmtProbeResp` frames having a payload shorter than their required fixed header (12 bytes). The `frame_parser.go` previously logged a warning but still returned a partially filled `ParsedFrameInfo`, leading `state_manager.go` to create an incomplete BSS.
+
+**Details:**
+*   **Affected File:** `pc_analyzer/frame_parser/parser.go`
+*   **Change Made:**
+    *   In the `parsePacketLayers` function, specifically in the `switch` case for `layers.Dot11TypeMgmtBeacon` and `layers.Dot11TypeMgmtProbeResp`:
+    *   If `len(originalPayload)` is less than `fixedHeaderLen` (12 bytes), the function now returns `nil, fmt.Errorf(...)` instead of `info, nil`.
+*   **Expected Outcome:** This change ensures that `parsePacketLayers` signals a critical error when essential management frames (Beacon, Probe Response) are too short to contain their fixed headers. Consequently, the calling function `ProcessPcapStream` will log this error and skip calling the packet handler for such frames. This will prevent `state_manager` from creating BSS entries based on these fundamentally incomplete and unusable frames, improving data quality.
+---
+### Decision (Debug - Frontend Code Quality)
+[2025-05-07 22:43:00] - [Code Cleanup: Resolve Additional ESLint Unused Variable Warning]
+
+**Rationale:**
+After previous ESLint warning fixes, a new run of the frontend build process revealed one more `no-unused-vars` warning in `BssList.tsx` for the `STA` type import. This occurred because the component (`StaListItem`) that utilized this type had been removed from the file in a prior cleanup step.
+
+**Details:**
+*   **Affected File:** `web_frontend/src/components/BssList/BssList.tsx`
+*   **Change Made:**
+    *   Removed the unused import `STA` from `../../types/data`. The import statement was changed from `import { BSS, STA } from '../../types/data';` to `import { BSS } from '../../types/data';`.
+*   **Expected Outcome:** All identified ESLint warnings related to unused variables in the specified frontend components are now resolved, contributing to cleaner code.
+---
+### Decision (Debug - Frontend Code Quality)
+[2025-05-07 22:41:00] - [Code Cleanup: Resolve ESLint Unused Variable Warnings]
+
+**Rationale:**
+During frontend compilation, ESLint reported several `no-unused-vars` warnings in `StaList.tsx` and `BssList.tsx`. While not critical runtime errors, these warnings indicate dead code or unnecessary imports, which can affect code clarity and maintainability. The decision was to remove the unused code to improve code quality.
+
+**Details:**
+*   **Affected Files:**
+    *   `web_frontend/src/components/StaList/StaList.tsx`
+    *   `web_frontend/src/components/BssList/BssList.tsx`
+*   **Changes Made in `web_frontend/src/components/StaList/StaList.tsx`:**
+    *   Removed the unused import `BSS` from `../../types/data`.
+    *   Removed the unused variable `allStas` (which was an alias for `staList` from `useAppState()`).
+*   **Changes Made in `web_frontend/src/components/BssList/BssList.tsx`:**
+    *   Removed the unused component definition for `StaListItem`.
+    *   Removed the unused interface definition `StaListItemProps`.
+*   **Expected Outcome:** ESLint warnings related to unused variables in these components are resolved, leading to cleaner code.
+---
+### Decision (Debug - Frontend Build Persistence)
+[2025-05-07 22:38:00] - [Bug Fix Strategy: Persist `--openssl-legacy-provider` in `package.json`]
+
+**Rationale:**
+To avoid manually prepending `NODE_OPTIONS=--openssl-legacy-provider` every time `npm start` is run for `web_frontend` (due to Node.js v23.9.0 OpenSSL compatibility issues with `react-scripts@3.4.4`), the environment variable setting was made persistent by modifying the `start` script in `package.json`.
+
+**Details:**
+*   **Affected File:** `web_frontend/package.json`
+*   **Change Made:**
+    *   The `scripts.start` value was changed from `"react-scripts start"` to `"NODE_OPTIONS=--openssl-legacy-provider react-scripts start"`.
+*   **Expected Outcome:** Users can now run `npm start` directly without needing to remember or manually type the `NODE_OPTIONS` flag, simplifying the development workflow while ensuring the OpenSSL legacy provider is used for compatibility.
+---
+### Decision (Debug - Frontend Build)
+[2025-05-07 22:35:00] - [Bug Fix Strategy: Use `--openssl-legacy-provider` for Node.js Crypto Compatibility]
+
+**Rationale:**
+The `web_frontend` failed to start using `npm start` with the error `Error: error:0308010C:digital envelope routines::unsupported`. This error is common with newer Node.js versions (v17+ like the project's v23.9.0) where OpenSSL 3 might disable older cryptographic algorithms by default, which are still used by older versions of Webpack or its dependencies (via `react-scripts@3.4.4`).
+
+**Details:**
+*   **Affected Component:** `web_frontend` build process.
+*   **Command Used:** `NODE_OPTIONS=--openssl-legacy-provider npm start`
+*   **Change Made:**
+    *   The `NODE_OPTIONS=--openssl-legacy-provider` environment variable was prepended to the `npm start` command. This instructs Node.js to use the legacy OpenSSL provider, which enables support for algorithms that might otherwise be unavailable.
+*   **Expected Outcome:** The Webpack development server starts successfully, allowing the frontend application to compile and run. This resolved the immediate build failure. The application compiled with some ESLint warnings related to unused variables, which are non-critical for initial startup.
+---
+### Decision (Debug)
+[2025-05-07 22:16:00] - [Bug Fix Strategy: Filter Multicast/Broadcast DA/RA in Data Frames for STA Creation]
+
+**Rationale:**
+User logs indicated that MAC addresses like `01:00:5e:7f:ff:fa` and `01:80:c2:00:00:00` (multicast/broadcast) were being incorrectly counted as STAs. These addresses appeared as the Destination Address (DA) in data frames. The existing `isUnicastMAC` function was correctly identifying these, but it was not applied to the DA (referred to as `parsedInfo.RA` in the data frame logic) when inferring the `staMAC`.
+
+**Details:**
+*   **Affected File:** `pc_analyzer/state_manager/manager.go`
+*   **Change Made:**
+    *   In the `ProcessParsedFrame` function, within the data frame processing section, when `staMAC` is derived from `parsedInfo.RA` (which corresponds to the DA of a frame from an AP, or the RA in other contexts), an `isUnicastMAC(parsedInfo.RA)` check was added.
+    *   If `parsedInfo.RA` is not a unicast MAC, `staMAC` is not assigned from it, preventing the creation or update of an STA entry for these non-unicast addresses.
+*   **Expected Outcome:** This change will prevent the state manager from creating STA entries for multicast or broadcast MAC addresses encountered as the destination in data frames, leading to a more accurate STA count and representation.
+---
 ### Decision (Debug)
 [2025-05-07 18:16:00] - [Bug Fix Strategy: Correct Frontend Data Handling for Web UI Display]
 

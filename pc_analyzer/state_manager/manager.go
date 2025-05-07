@@ -151,9 +151,21 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 				// ONLY create BSS if it's a Beacon or Probe Response and BSSID is unicast
 				if isBeaconOrProbeResp && isUnicastMAC(bssidMAC) {
 					bss = NewBSSInfo(bssidStr)
-					sm.bssInfos[bssidStr] = bss
-					log.Printf("DEBUG_STATE_MANAGER: Created new BSS %s from %s", bssidStr, parsedInfo.FrameType.String())
-					// Proceed to update attributes for the newly created BSS below
+					// --- Start: Add check for incomplete BSS info before adding to map ---
+					isSsidMissing := (parsedInfo.SSID == "" || parsedInfo.SSID == "[N/A]" || parsedInfo.SSID == "<Hidden SSID>" || parsedInfo.SSID == "<Invalid SSID Encoding>")
+					isSecurityMissing := len(parsedInfo.RSNRaw) == 0
+					areCapsMissing := parsedInfo.ParsedHTCaps == nil && parsedInfo.ParsedVHTCaps == nil
+
+					if isSsidMissing && isSecurityMissing && areCapsMissing {
+						log.Printf("WARN_STATE_MANAGER: Skipping creation of new BSS %s from %s due to severely incomplete information (No SSID, RSN, HT/VHT Caps).", bssidStr, parsedInfo.FrameType.String())
+						// Do not add the incomplete bss to the map
+						bss = nil // Set bss back to nil so subsequent updates are skipped
+					} else {
+						sm.bssInfos[bssidStr] = bss // Add the new BSS to the map
+						log.Printf("DEBUG_STATE_MANAGER: Created new BSS %s from %s", bssidStr, parsedInfo.FrameType.String())
+						// Proceed to update attributes for the newly created BSS below
+					}
+					// --- End: Add check for incomplete BSS info ---
 				} else {
 					// If BSS doesn't exist and it's not Beacon/ProbeResp, ignore this frame for BSS processing
 					// Do not return here, as we might still need to process STA association logic below
@@ -330,7 +342,13 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 			if _, isBSS := sm.bssInfos[taStr]; isBSS {
 				apMAC = taStr
 				if parsedInfo.RA != nil {
-					staMAC = parsedInfo.RA.String()
+					if isUnicastMAC(parsedInfo.RA) {
+						staMAC = parsedInfo.RA.String()
+					} else {
+						log.Printf("DEBUG_STATE_MANAGER: Data frame RA %s is not unicast, not considered for STA.", parsedInfo.RA.String())
+						// staMAC will remain empty or its previous value,
+						// and will likely be filtered by subsequent staMAC != "" checks.
+					}
 				}
 			} else {
 				staMAC = taStr

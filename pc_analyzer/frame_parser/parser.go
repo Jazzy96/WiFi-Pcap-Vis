@@ -271,8 +271,8 @@ func parsePacketLayers(rawData []byte, linkType layers.LinkType, captureTimestam
 				iePayload = originalPayload[fixedHeaderLen:]
 				log.Printf("DEBUG_MGMT_PAYLOAD_OFFSET: FrameType: %s, BSSID: %s, Applied %d-byte offset. OriginalPayloadLen: %d, EffectiveIEPayloadLen: %d", dot11.Type.String(), bssidForLog, fixedHeaderLen, len(originalPayload), len(iePayload))
 			} else {
-				log.Printf("WARN_MGMT_PAYLOAD_OFFSET: FrameType: %s, BSSID: %s, Payload too short for fixed header (expected %d, got %d). No IEs will be parsed.", dot11.Type.String(), bssidForLog, fixedHeaderLen, len(originalPayload))
-				return info, nil
+				log.Printf("WARN_MGMT_PAYLOAD_OFFSET: FrameType: %s, BSSID: %s, Payload too short for fixed header (expected %d, got %d). No IEs will be parsed. Frame will be skipped.", dot11.Type.String(), bssidForLog, fixedHeaderLen, len(originalPayload))
+				return nil, fmt.Errorf("payload too short for fixed header (expected %d, got %d) for %s", fixedHeaderLen, len(originalPayload), dot11.Type.String())
 			}
 		case layers.Dot11TypeMgmtAssociationReq:
 			const fixedHeaderLen = 4
@@ -375,12 +375,12 @@ func parsePacketLayers(rawData []byte, linkType layers.LinkType, captureTimestam
 					if utf8.Valid(ieInfo) {
 						ssidContent = string(ieInfo)
 					} else {
-						ssidContent = "<Invalid SSID Encoding>"
+						ssidContent = "<Invalid/Undecodable SSID>" // Mark as invalid if not UTF-8
 						log.Printf("WARN_SSID_PARSE: Invalid UTF-8 encoding for SSID IE. BSSID: %s, Length: %d, Hex: %x", bssidForLog, ieLength, ieInfo)
 					}
 				}
 				info.SSID = ssidContent
-				log.Printf("DEBUG_SSID_PARSE: Found SSID IE for BSSID %s. Length: %d, SSID: [%s], Hex: %x", bssidForLog, ieLength, ssidContent, ieInfo)
+				log.Printf("DEBUG_SSID_PARSE: Found SSID IE for BSSID %s. Length: %d, SSID: [%s], Hex: %x", bssidForLog, ieLength, ssidContent, ieInfo) // Log the final result
 
 			case layers.Dot11InformationElementIDRates:
 				info.SupportedRates = make([]byte, ieLength)

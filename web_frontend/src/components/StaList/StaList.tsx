@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAppState } from '../../contexts/DataContext';
-import { STA, BSS } from '../../types/data';
+import { STA } from '../../types/data';
 import './StaList.css'; // We will create this CSS file next
 
 interface StaListItemProps {
@@ -21,7 +21,7 @@ const StaListItemDetails: React.FC<StaListItemProps> = ({ sta }) => {
 };
 
 export const StaList: React.FC = () => {
-  const { bssList, selectedBssidForStaList, staList: allStas } = useAppState();
+  const { bssList, selectedBssidForStaList } = useAppState();
 
   // Handle the initial state where no BSS is selected
   if (!selectedBssidForStaList) {
@@ -50,7 +50,7 @@ export const StaList: React.FC = () => {
 
   // Now we know selectedBss exists
   const stationsToShow: STA[] = Object.values(selectedBss.associated_stas || {});
-  const title = `Stations in ${selectedBss.ssid || selectedBss.bssid} (${stationsToShow.length})`;
+  const title = `Stations of ${selectedBss.ssid || selectedBss.bssid} (${stationsToShow.length})`;
 
 
   if (stationsToShow.length === 0) {

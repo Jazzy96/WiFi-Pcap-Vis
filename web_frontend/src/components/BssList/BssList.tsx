@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppState, useAppDispatch } from '../../contexts/DataContext'; // Import useAppDispatch
-import { BSS, STA } from '../../types/data';
+import { BSS } from '../../types/data';
 import './BssList.css';
 
 interface BssItemProps {
@@ -65,30 +65,6 @@ const BssItem: React.FC<BssItemProps> = ({ bss, isSelectedForStaList, isExpanded
     </div>
   );
 };
-
-interface StaListItemProps {
-  sta: STA; // Use STA type
-}
-
-const StaListItem: React.FC<StaListItemProps> = ({ sta }) => {
-  return (
-    <div className="sta-list-item">
-      {/* Use mac_address */}
-      <div className="sta-field mac"><strong>MAC:</strong> {sta.mac_address}</div>
-      {/* Remove fields not present in STA type */}
-      {/* <div className="sta-field aid"><strong>AID:</strong> {sta.aid !== null ? sta.aid : 'N/A'}</div> */}
-      {/* <div className="sta-field state"><strong>State:</strong> {sta.state}</div> */}
-      {/* Use signal_strength */}
-      <div className="sta-field signal"><strong>Signal:</strong> {sta.signal_strength !== null ? `${sta.signal_strength} dBm` : 'N/A'}</div>
-      {/* <div className="sta-field capabilities"><strong>Capabilities:</strong> {sta.capabilities.join(', ') || 'N/A'}</div> */}
-      {/* Use last_seen */}
-      <div className="sta-field last-seen"><strong>Last Seen:</strong> {new Date(sta.last_seen).toLocaleTimeString()}</div>
-      {/* <div className="sta-field rx-bytes"><strong>RX Bytes:</strong> {sta.rxBytes}</div> */}
-      {/* <div className="sta-field tx-bytes"><strong>TX Bytes:</strong> {sta.txBytes}</div> */}
-    </div>
-  );
-};
-
 
 export const BssList: React.FC = () => {
   const appState = useAppState();
