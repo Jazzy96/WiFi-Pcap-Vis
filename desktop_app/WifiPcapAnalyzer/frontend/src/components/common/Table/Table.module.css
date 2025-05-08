@@ -1,0 +1,62 @@
+.tableContainer {
+  width: 100%;
+  overflow-x: auto; /* Allows horizontal scrolling for very wide tables */
+  background-color: var(--misty-white);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-light);
+  margin-bottom: 1.5rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-primary);
+  color: var(--graphite-gray);
+}
+
+.tableCaption {
+  padding: 0.75rem 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-align: left;
+  color: var(--graphite-gray);
+  border-bottom: 2px solid #e0e5e9; /* Heavier border for caption */
+}
+
+.tableHead th {
+  background-color: #e8edf0; /* A very light gray for header, slightly different from misty-white */
+  color: var(--graphite-gray);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600; /* Semi-bold for headers */
+  border-bottom: 2px solid #d1d8dd; /* Separator for header */
+}
+
+.tableHead th:first-child {
+  border-top-left-radius: var(--border-radius-base);
+}
+
+.tableHead th:last-child {
+  border-top-right-radius: var(--border-radius-base);
+}
+
+.tableBody td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e0e5e9; /* Light border for rows */
+  vertical-align: middle; /* Align content vertically */
+}
+
+.tableBody tr:last-child td {
+  border-bottom: none; /* No border for the last row */
+}
+
+.tableBody tr:hover {
+  background-color: #f0f3f5; /* Subtle hover effect */
+}
+
+.emptyMessage {
+  text-align: center;
+  padding: 2rem;
+  color: #777;
+  font-style: italic;
+}

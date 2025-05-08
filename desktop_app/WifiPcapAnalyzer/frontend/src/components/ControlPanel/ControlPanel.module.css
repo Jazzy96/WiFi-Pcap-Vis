@@ -1,0 +1,245 @@
+.controlPanel {
+  background-color: var(--color-misty-white);
+  padding: calc(var(--spacing-unit) * 2);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-light);
+  font-family: var(--font-primary);
+  transition: width 0.3s ease-in-out, padding 0.3s ease-in-out, min-width 0.3s ease-in-out;
+  width: 100%; /* Take full width of its grid container cell */
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Prevent flex item from growing indefinitely */
+}
+
+.controlPanel.collapsed {
+  /* Adjust width for collapsed state, primarily for the icon/button */
+  width: calc(var(--spacing-unit) * 7); /* Approx 56px, adjust as needed */
+  min-width: calc(var(--spacing-unit) * 7);
+  padding: var(--spacing-unit);
+  align-items: center;
+  justify-content: center;
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: calc(var(--spacing-unit) * 1.5);
+  width: 100%;
+}
+
+.controlPanel.collapsed .panelHeader h2 {
+  display: none;
+}
+
+.controlPanel.collapsed .panelHeader {
+  justify-content: center;
+  margin-bottom: 0;
+}
+
+.panelTitle {
+  margin-top: 0;
+  margin-bottom: 0; /* Removed bottom margin, spacing handled by panelHeader */
+  color: var(--text-color-primary-on-light);
+  font-size: 1.3rem; /* Adjusted size */
+  font-weight: 600;
+  /* border-bottom: 1px solid #eee; */ /* Removed border, cleaner look */
+  /* padding-bottom: var(--spacing-unit); */
+}
+
+.collapseButton {
+  background-color: var(--color-tech-blue);
+  color: var(--color-misty-white);
+  border: none;
+  border-radius: var(--border-radius-base); /* Consistent border radius */
+  width: calc(var(--spacing-unit) * 4); /* 32px */
+  height: calc(var(--spacing-unit) * 4); /* 32px */
+  font-size: 1.4rem; /* Larger icon */
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-light);
+  flex-shrink: 0;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.collapseButton:hover {
+  background-color: color-mix(in srgb, var(--color-tech-blue) 85%, black);
+}
+
+.panelContent {
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+}
+
+.controlPanel.collapsed .panelContent {
+  display: none;
+}
+
+.statusIndicator { /* This component was removed from TSX, but styles are here if re-added */
+  padding: var(--spacing-unit) calc(var(--spacing-unit) * 1.5);
+  border-radius: var(--border-radius-base);
+  margin-bottom: calc(var(--spacing-unit) * 2);
+  font-weight: 600; /* Bolder font */
+  text-align: center;
+  border: 1px solid transparent;
+}
+
+.statusIndicator.connected {
+  background-color: color-mix(in srgb, var(--color-tech-blue) 15%, transparent);
+  color: color-mix(in srgb, var(--color-tech-blue) 80%, black);
+  border-color: color-mix(in srgb, var(--color-tech-blue) 40%, transparent);
+}
+
+.statusIndicator.disconnected {
+  background-color: #f8d7da; /* Consider a variable for error/warning states */
+  color: #721c24;
+  border-color: #f5c6cb;
+}
+
+.controlGroup {
+  margin-bottom: calc(var(--spacing-unit) * 2);
+  display: flex;
+  flex-direction: column; /* Stack label and input/select vertically */
+  gap: var(--spacing-unit);
+}
+
+.controlGroup label {
+  font-weight: 500; /* Medium weight */
+  color: var(--text-color-secondary-on-light); /* Softer color for labels */
+  font-size: 0.9rem;
+}
+
+.inputRow { /* New class to keep input/select and its button on the same row */
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-unit);
+}
+
+.controlGroup input[type="number"], /* Consider replacing with common Input component later */
+.controlGroup select {
+  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 1.5);
+  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 25%, transparent);
+  border-radius: var(--border-radius-base);
+  background-color: var(--color-misty-white);
+  color: var(--text-color-primary-on-light);
+  flex-grow: 1;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.controlGroup input[type="number"]:focus,
+.controlGroup select:focus {
+  outline: none;
+  border-color: var(--color-tech-blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-tech-blue) 30%, transparent);
+}
+
+.controlGroup input[type="number"]:disabled,
+.controlGroup select:disabled {
+  background-color: color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+
+/* Button for "Set Channel" / "Set Bandwidth" */
+.setButton {
+  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 1.5);
+  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 30%, transparent);
+  border-radius: var(--border-radius-base);
+  background-color: var(--color-misty-white);
+  color: var(--text-color-secondary-on-light);
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  font-size: 0.9rem;
+  font-weight: 500;
+  flex-shrink: 0; /* Prevent shrinking */
+}
+
+.setButton:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-tech-blue) 10%, var(--color-misty-white));
+  border-color: var(--color-tech-blue);
+  color: var(--color-tech-blue);
+}
+
+.setButton:disabled {
+  background-color: color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
+  border-color: color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
+  color: color-mix(in srgb, var(--text-color-secondary-on-light) 70%, transparent);
+  cursor: not-allowed;
+}
+
+.actionButtons { /* Container for Start/Stop button */
+  margin-top: calc(var(--spacing-unit) * 2);
+  display: flex;
+  flex-direction: column; /* Stack buttons if multiple, or ensure full width for single button */
+  gap: var(--spacing-unit);
+}
+
+.actionButton {
+  padding: calc(var(--spacing-unit) * 1.25) calc(var(--spacing-unit) * 2);
+  font-size: 1rem;
+  border: none;
+  border-radius: var(--border-radius-base);
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  font-weight: 600;
+  color: var(--color-misty-white);
+  width: 100%; /* Make action buttons full width */
+  box-shadow: var(--shadow-light);
+}
+
+.actionButton:disabled {
+  background-color: color-mix(in srgb, var(--color-graphite-gray) 40%, transparent) !important;
+  color: color-mix(in srgb, var(--color-misty-white) 70%, transparent) !important;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.actionButton.start {
+  background-color: var(--color-tech-blue);
+}
+
+.actionButton.start:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-tech-blue) 85%, black);
+  box-shadow: var(--shadow-medium);
+}
+
+.actionButton.stop {
+  background-color: #D32F2F; /* A distinct red for stop/danger, consider adding to vars if used elsewhere */
+}
+
+.actionButton.stop:hover:not(:disabled) {
+  background-color: color-mix(in srgb, #D32F2F 85%, black);
+  box-shadow: var(--shadow-medium);
+}
+
+/* Responsive adjustments if needed specifically for control panel */
+@media (max-width: 768px) {
+  .panelTitle {
+    font-size: 1.15rem;
+  }
+  .controlGroup label {
+    font-size: 0.85rem;
+  }
+  .controlGroup input[type="number"],
+  .controlGroup select,
+  .setButton {
+    font-size: 0.9rem;
+    padding: var(--spacing-unit);
+  }
+  .actionButton {
+    font-size: 0.95rem;
+    padding: var(--spacing-unit) calc(var(--spacing-unit) * 1.5);
+  }
+}

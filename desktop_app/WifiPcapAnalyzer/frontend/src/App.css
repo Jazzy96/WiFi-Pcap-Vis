@@ -1,153 +1,144 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: #f4f7f6;
-  color: #333;
-}
+/* App.css - Main application layout styles */
+
+/* Ensure body styles from index.css are respected and not overridden here unless specific to App component */
 
 .App {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* background-color: var(--color-misty-white); */ /* Base background for the app */
+  background-color: #f0f2f5; /* A very light gray background */
 }
 
-.App-header {
-  background-color: #2c3e50; /* Dark blue-grey */
-  padding: 20px;
-  color: white;
-  text-align: center;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.App-header h1 {
-  margin: 0;
-  font-size: 1.8em;
-}
+/* .App-header and .App-header h1 styles removed */
 
 .App-main {
   flex-grow: 1;
-  display: flex;
-  flex-direction: row; /* Default to row for larger screens */
-  padding: 20px;
-  gap: 20px;
-  align-items: flex-start; /* Align items to the top */
+  display: grid;
+  /* Three columns: ControlPanel, BssList, StaList */
+  /* Use fractional units for all columns for maximum flexibility */
+  grid-template-columns: 1fr 1fr 1fr; /* Give CP less space proportionally */
+  gap: calc(var(--spacing-unit) * 2);
+  padding: calc(var(--spacing-unit) * 2);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden; /* Prevent main container from scrolling due to children */
 }
 
-.control-panel-container { /* New wrapper for control panel */
-  flex: 0 0 280px; /* Give control panel a fixed base width */
-  transition: flex-basis 0.3s ease-in-out, width 0.3s ease-in-out; /* Add transition */
-  overflow-y: auto; /* Allow scrolling if content overflows */
-  overflow-x: hidden; /* Prevent horizontal scroll from container itself */
+/* General container styling for sections within App-main */
+.bss-list-container,
+.sta-list-container-wrapper { /* ControlPanel container styling removed from here */
+  background-color: var(--color-misty-white);
+  padding: calc(var(--spacing-unit) * 1.5);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-light);
+  overflow-y: auto; /* Allow vertical scroll within each panel */
+  height: calc(100vh - (var(--spacing-unit) * 4)); /* Adjust height to fill viewport minus padding */
+  /* Consider adding a max-height if 100vh is too much */
+}
+
+.control-panel-container { /* Only positioning and transition styles remain */
+  grid-column: 1 / 2;
+  transition: min-width 0.3s ease-in-out, max-width 0.3s ease-in-out; /* Transition min/max width */
+  /* Let ControlPanel.module.css handle background, padding, border, shadow */
+  /* Ensure it can shrink */
+  overflow: hidden;
 }
 
 .control-panel-container.collapsed {
-  flex-basis: 60px; /* Width when panel is collapsed, allowing space for button and padding */
-  /* width: 60px; /* Alternative to flex-basis if parent is not flex, or for more direct control */
+   /* Override grid fraction with fixed width */
+   /* Use max-width and min-width to force the collapsed size */
+   min-width: 60px;
+   max-width: 60px;
+   /* Padding is handled by ControlPanel.module.css */
+  /* The actual hiding of content within ControlPanel is handled by ControlPanel.tsx */
 }
 
-.bss-list-container { /* New wrapper for BSS list */
-  flex: 1; /* Allow BSS list to grow and shrink, taking proportional space */
-  min-width: 250px; /* Prevent it from becoming too narrow */
-  /* height: calc(100vh - 120px); */ /* Remove fixed height */
-  height: auto; /* Let flexbox handle height */
-  align-self: stretch; /* Make it fill the parent's height */
-  overflow-y: auto;
-  background-color: #ffffff;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+.bss-list-container {
+  grid-column: 2 / 3;
 }
 
-.main-content-area { /* Container for STA list */
-  flex: 1; /* Allow STA list to grow and shrink, taking proportional space */
-  min-width: 250px; /* Prevent it from becoming too narrow */
-  /* height: calc(100vh - 120px); */ /* Remove fixed height */
-  height: auto; /* Let flexbox handle height */
-  align-self: stretch; /* Make it fill the parent's height */
-  overflow-y: auto;
-  background-color: #e9ecef; /* Different background for distinction */
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
-
-
-/* Responsive adjustments for smaller screens if needed */
-@media (max-width: 992px) { /* Adjusted breakpoint to ensure 1024px still uses row layout */
-  .App-main {
-    flex-direction: column; /* Stack them vertically */
-  }
-  .control-panel-container,
-  .bss-list-container,
-  .main-content-area {
-    flex-basis: auto; /* Allow them to take full width */
-    width: 100%;
-    max-width: none;
-    height: auto; /* Adjust height for vertical stacking */
-    margin-bottom: 20px;
-  }
-  .control-panel-container {
-     height: auto; /* Control panel height auto when stacked */
-  }
-   .bss-list-container {
-    min-height: 300px; /* Give BSS list some min height when stacked */
-  }
-  .main-content-area {
-    min-height: 300px; /* Give main content some min height when stacked */
-  }
-}
-
-
-.control-panel-wrapper { /* This class is inside ControlPanel.tsx, style it there or rename if this is for App.tsx */
-  /* Styles for the container of ControlPanel if needed */
-  /* background-color: #ffffff; */ /* Moved to .control-panel-container or handled by .control-panel itself */
-  /* padding: 15px; */
-  /* border-radius: 8px; */
-  /* box-shadow: 0 1px 3px rgba(0,0,0,0.08); */
-}
-
-.bss-list-wrapper { /* This class is inside BssList.tsx, style it there or rename if this is for App.tsx */
-  /* Styles for the container of BssList if needed */
-  /* background-color: #ffffff; */ /* Moved to .bss-list-container */
-  /* padding: 15px; */
-  /* border-radius: 8px; */
-  /* box-shadow: 0 1px 3px rgba(0,0,0,0.08); */
-  /* overflow-x: auto; */ /* overflow-y is on bss-list-container */
+.sta-list-container-wrapper { /* Assuming .main-content-area in App.tsx is for StaList */
+  grid-column: 3 / 4;
 }
 
 
 .App-footer {
-  background-color: #34495e; /* Slightly lighter blue-grey */
-  padding: 15px;
-  color: #ecf0f1; /* Light grey text */
+  background-color: var(--color-graphite-gray);
+  padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 2.5);
+  color: var(--color-misty-white);
   text-align: center;
-  font-size: 0.9em;
-  box-shadow: 0 -2px 4px rgba(0,0,0,0.05);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--color-tech-blue);
+  /* margin-top: auto; /* Footer might not be needed if main content fills height */
 }
 
-/* Remove default CRA animation if not used */
-/*
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
+/* Responsive adjustments for smaller screens */
+@media (max-width: 900px) { /* Lowered breakpoint further */
+  .App-main {
+    /* Stack BSS and STA list */
+    grid-template-columns: auto 1fr; /* Control Panel and combined BSS/STA */
+    grid-template-rows: auto; /* Let content define row height */
+  }
+  .control-panel-container {
+     /* Reset width/min-width overrides from larger screens */
+     width: auto;
+     max-width: none;
+     min-width: 50px; /* Keep minimum collapsed width */
+  }
+   .control-panel-container.collapsed {
+     /* Reset width/min-width overrides from larger screens */
+     width: auto;
+     max-width: none;
+     min-width: 60px; /* Ensure collapsed width is respected */
+   }
+  .bss-list-container {
+    grid-column: 2 / 3;
+    grid-row: 1 / 2; /* BSS list on top */
+    margin-bottom: calc(var(--spacing-unit) * 2); /* Add space if stacked */
+  }
+  .sta-list-container-wrapper {
+    grid-column: 2 / 3;
+    grid-row: 2 / 3; /* STA list below */
   }
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
+
+@media (max-width: 768px) { /* Further stacking for smaller screens */
+  .App-main {
+    grid-template-columns: 1fr; /* Stack all sections vertically */
   }
-  to {
-    transform: rotate(360deg);
+   .control-panel-container,
+  .bss-list-container,
+  .sta-list-container-wrapper {
+    grid-column: 1 / -1; /* Each takes full width */
+    margin-bottom: calc(var(--spacing-unit) * 2);
+    height: auto; /* Adjust height for stacked layout */
+    min-height: 200px; /* Ensure some visibility */
+  }
+   .control-panel-container.collapsed {
+     /* Reset width/min-width overrides from larger screens */
+     width: auto;
+     max-width: none;
+     min-width: 100%; /* Ensure it takes full width when collapsed and stacked */
+   }
+}
+
+
+@media (max-width: 600px) {
+  .App-main {
+    padding: calc(var(--spacing-unit) * 1.5);
+    gap: calc(var(--spacing-unit) * 1.5);
+  }
+  .control-panel-container,
+  .bss-list-container,
+  .sta-list-container-wrapper {
+    padding: var(--spacing-unit);
   }
 }
+
+/* Ensure any very specific styles from the old App.css that are still relevant
+   are either migrated to component-specific CSS modules or adapted here using CSS variables.
+   The goal is to rely more on global variables and component-scoped styles.
 */

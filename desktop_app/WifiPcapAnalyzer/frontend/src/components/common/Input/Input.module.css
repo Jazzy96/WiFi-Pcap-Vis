@@ -1,0 +1,46 @@
+.inputContainer {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1rem; /* Add some space between input fields */
+}
+
+.label {
+  margin-bottom: 0.5rem;
+  font-family: var(--font-primary);
+  color: var(--graphite-gray); /* Or --misty-white if on dark background */
+  font-size: 0.9rem;
+}
+
+.input,
+select.input { /* Ensure select also gets these base styles */
+  padding: 10px;
+  border: 1px solid #ccc; /* A neutral border color */
+  border-radius: var(--border-radius-base);
+  font-family: var(--font-primary);
+  font-size: 1rem;
+  background-color: var(--misty-white);
+  color: var(--graphite-gray);
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.input:focus,
+select.input:focus {
+  outline: none;
+  border-color: var(--tech-blue);
+  box-shadow: 0 0 0 2px rgba(30, 144, 255, 0.2); /* Focus ring with tech-blue */
+}
+
+.errorInput {
+  border-color: #ff4d4f; /* A common error red color */
+}
+
+.errorInput:focus {
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.2); /* Error focus ring */
+}
+
+.errorMessage {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: #ff4d4f;
+  font-family: var(--font-primary);
+}

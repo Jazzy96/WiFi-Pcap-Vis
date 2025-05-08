@@ -1,0 +1,50 @@
+.tabsContainer {
+  width: 100%;
+  font-family: var(--font-primary);
+}
+
+.tabList {
+  display: flex;
+  border-bottom: 2px solid #d1d8dd; /* Separator for the tab list */
+  margin-bottom: 1rem;
+}
+
+.tabButton {
+  padding: 10px 20px;
+  cursor: pointer;
+  border: none;
+  background-color: transparent;
+  font-family: var(--font-primary);
+  font-size: 1rem;
+  color: var(--graphite-gray);
+  position: relative;
+  transition: color 0.2s ease-in-out;
+  margin-right: 5px; /* Space between tab buttons */
+  border-radius: var(--border-radius-base) var(--border-radius-base) 0 0; /* Rounded top corners */
+}
+
+.tabButton:hover:not(.disabled) {
+  color: var(--tech-blue);
+  background-color: #e8edf0; /* Light hover background */
+}
+
+.tabButton.active {
+  color: var(--tech-blue);
+  font-weight: 600; /* Semi-bold for active tab */
+  border-bottom: 2px solid var(--tech-blue);
+  margin-bottom: -2px; /* Overlap the container's border-bottom */
+  background-color: var(--misty-white); /* Match panel background if tabs are directly above */
+}
+
+.tabButton.disabled {
+  color: #aaa;
+  cursor: not-allowed;
+}
+
+.tabPanel {
+  padding: 1rem;
+  background-color: var(--misty-white); /* Assuming panels have a light background */
+  border-radius: 0 0 var(--border-radius-base) var(--border-radius-base); /* Rounded bottom corners if tabs are on top */
+  /* If tabs are part of a card, this might not need its own background/border */
+  box-shadow: var(--shadow-light);
+}

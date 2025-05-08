@@ -1,0 +1,100 @@
+.staListContainer {
+  font-family: var(--font-primary);
+  color: var(--text-color-primary-on-light);
+  height: 100%; /* Fill container height */
+  display: flex;
+  flex-direction: column;
+}
+
+.staListTitle {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text-color-primary-on-light);
+  margin-bottom: calc(var(--spacing-unit) * 2);
+  padding-bottom: var(--spacing-unit);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
+}
+
+.staListTitle code { /* Styling for BSSID in title */
+  font-size: 0.9em;
+  color: var(--color-tech-blue);
+  background-color: color-mix(in srgb, var(--color-tech-blue) 10%, transparent);
+  padding: calc(var(--spacing-unit) * 0.25) calc(var(--spacing-unit) * 0.75);
+  border-radius: calc(var(--border-radius-base) / 2);
+}
+
+.staListStatus {
+  padding: calc(var(--spacing-unit) * 2.5);
+  text-align: center;
+  font-size: 1rem;
+  color: var(--text-color-secondary-on-light);
+  background-color: color-mix(in srgb, var(--color-misty-white) 90%, var(--color-graphite-gray) 5%);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-light);
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.staList {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 1.5); /* Space between STA cards */
+  overflow-y: auto;
+  flex-grow: 1; /* Allow list to take available space and scroll */
+  padding-right: calc(var(--spacing-unit) * 0.5); /* Small padding for scrollbar */
+}
+
+/* Remove .staListItemDetails styles */
+
+/* Styles for the STA Card */
+.staCard {
+  /* Inherits base card styles, add specifics here if needed */
+  /* Example: slightly different padding or margin */
+  padding: var(--spacing-unit) calc(var(--spacing-unit) * 1.5);
+}
+
+/* Grid layout for details within the card */
+.staDetailsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); /* Responsive columns for details */
+  gap: calc(var(--spacing-unit) * 0.5) var(--spacing-unit); /* Row and column gap */
+  margin-top: var(--spacing-unit); /* Space below card title */
+}
+
+.staField {
+  /* margin-bottom: calc(var(--spacing-unit) * 0.75); */ /* Grid gap handles spacing */
+  font-size: 0.9rem;
+  color: var(--text-color-secondary-on-light);
+  line-height: 1.5;
+}
+
+.staField strong {
+  color: var(--text-color-primary-on-light);
+  font-weight: 500; /* Medium weight for labels */
+  margin-right: calc(var(--spacing-unit) * 0.5);
+  /* min-width: 90px; /* Less relevant in grid */
+  /* display: inline-block; */ /* Not needed in grid */
+}
+
+/* .staField.mac style removed as MAC is now in Card title */
+
+.htCaps,
+.vhtCaps {
+  font-size: 0.8rem;
+  word-break: break-all;
+  background-color: color-mix(in srgb, var(--color-graphite-gray) 5%, transparent);
+  padding: calc(var(--spacing-unit) * 0.75);
+  border-radius: calc(var(--border-radius-base) / 2);
+  margin-top: var(--spacing-unit);
+  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
+  grid-column: 1 / -1; /* Make capabilities span full width */
+}
+
+.capabilitiesPre {
+  white-space: pre-wrap; /* Preserve whitespace and wrap for JSON */
+  margin: 0; /* Remove default pre margin */
+  font-size: inherit; /* Inherit font size from parent */
+  font-family: var(--font-monospace);
+}

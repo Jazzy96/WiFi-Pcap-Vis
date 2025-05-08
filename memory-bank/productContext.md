@@ -34,3 +34,35 @@ This file provides a high-level overview of the project and the expected product
     3.  **Web前端可视化界面 (Web Frontend Visualization UI)**
 *   **数据流:** 路由器 (原始帧) -> gRPC -> PC引擎 (解析、状态管理) -> WebSocket -> Web前端 (可视化)。
 *   **控制流:** Web前端 (用户指令) -> WebSocket -> PC引擎 -> gRPC -> 路由器代理 (执行操作)。
+## UI/UX Design Specifications (as of 2025-05-08)
+
+This section outlines the design guidelines for the UI/UX redesign of the "Enterprise Wi-Fi Capture Analysis Software".
+
+**Overall Style:**
+*   **Target:** High-end, minimalist, professional.
+*   **Feel:** Natural, stable, not overly flashy, suitable for enterprise Wi-Fi testing clients.
+
+**Color Palette:**
+*   **Base:**
+    *   Graphite Gray: `#1F242B` (Primary background, dark elements)
+    *   Misty White: `#F5F7F9` (Primary content area background, light elements)
+*   **Accent:**
+    *   Tech Blue: `#1E90FF` (Interactive elements, highlights, key chart color)
+
+**Typography & Layout:**
+*   **Layout:** Grid-based.
+*   **Font:**
+    *   Primary: "SF Pro"
+    *   Fallback: "Helvetica Neue", Arial, sans-serif (or "Roboto", "Open Sans", "Lato")
+*   **Rounded Corners:** 8px.
+*   **Shadows:** Lightweight shadows.
+*   **Contrast:** Adhere to WCAG AA standards.
+
+**Key Design Principles:**
+*   Clarity and ease of use for technical users.
+*   Professional aesthetic suitable for enterprise software.
+*   Consistent application of styles across all UI elements.
+*   Responsive handling of information display within the desktop application window.
+
+---
+*(Existing content follows)*

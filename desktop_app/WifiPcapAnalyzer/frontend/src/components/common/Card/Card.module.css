@@ -1,0 +1,43 @@
+.card {
+  /* background-color: var(--misty-white); */
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-light);
+  padding: 1.5rem; /* Default padding */
+  margin-bottom: 1.5rem; /* Space between cards */
+  color: var(--graphite-gray);
+  transition: box-shadow 0.3s ease-in-out;
+}
+
+.card:hover {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1); /* Slightly more pronounced shadow on hover */
+}
+
+.cardTitle {
+  font-family: var(--font-primary);
+  font-size: 1.25rem;
+  font-weight: 600; /* Semi-bold for titles */
+  color: var(--graphite-gray);
+  margin-top: 0;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e0e5e9; /* Light separator for title */
+}
+
+.cardContent {
+  font-family: var(--font-primary);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+/* Example of how you might style a card on a dark background if needed */
+/*
+.card.onDarkBackground {
+  background-color: var(--graphite-gray);
+  color: var(--misty-white);
+}
+
+.card.onDarkBackground .cardTitle {
+  color: var(--misty-white);
+  border-bottom-color: #3a414a; 
+}
+*/

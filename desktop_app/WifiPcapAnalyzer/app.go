@@ -80,7 +80,7 @@ func (a *App) startup(ctx context.Context) {
 	log.Printf("gRPC client connected to %s.", a.appConfig.GRPCServerAddress)
 
 	// Goroutine to periodically send state snapshot to WebSocket clients via Wails events
-	snapshotTicker := time.NewTicker(2 * time.Second) // Send updates every 2 seconds
+	snapshotTicker := time.NewTicker(500 * time.Millisecond) // Send updates every 500 milliseconds
 	go func() {
 		defer snapshotTicker.Stop()
 		for {

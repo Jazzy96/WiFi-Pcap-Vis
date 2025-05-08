@@ -1,0 +1,14 @@
+.icon {
+  display: inline-block;
+  vertical-align: middle; /* Helps align with text if used inline */
+  fill: currentColor; /* Default fill color, can be overridden by CSS or 'color' prop */
+  /* transition for color changes if desired */
+  /* transition: fill 0.2s ease-in-out; */
+}
+
+/* You can add specific styles for icons if needed, e.g., based on name or usage context */
+/*
+.icon.close {
+  color: red;
+}
+*/

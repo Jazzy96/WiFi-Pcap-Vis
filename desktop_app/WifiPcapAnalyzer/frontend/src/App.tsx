@@ -9,19 +9,21 @@ import { StaList } from './components/StaList/StaList'; // Import StaList
 const InnerApp: React.FC = () => {
   const { isPanelCollapsed } = useAppState(); // Get panel collapse state
 
+  const mainStyle = {
+    gridTemplateColumns: isPanelCollapsed ? '60px 2fr 3fr' : 'minmax(240px, 0.8fr) 2fr 3fr',
+  };
+
   return (
     <div className="App">
-      <header className="App-header">
-        <h1>WiFi PCAP Visualizer</h1>
-      </header>
-      <main className="App-main">
+      {/* Header removed based on feedback */}
+      <main className="App-main" style={mainStyle}>
         <div className={`control-panel-container ${isPanelCollapsed ? 'collapsed' : ''}`}>
           <ControlPanel />
         </div>
         <div className="bss-list-container">
             <BssList />
           </div>
-          <div className="main-content-area">
+          <div className="sta-list-container-wrapper"> {/* Ensure class name matches App.css */}
             <StaList /> {/* Render StaList here */}
           </div>
         </main>

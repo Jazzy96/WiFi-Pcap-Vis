@@ -1,13 +1,110 @@
+:root {
+  /* Color Palette */
+  --color-graphite-gray: #1F242B; /* Primary background, dark elements */
+  --color-misty-white: #F5F7F9;   /* Primary content area background, light elements */
+  --color-tech-blue: #1E90FF;     /* Interactive elements, highlights, key chart color */
+
+  /* Typography */
+  --font-primary: "SF Pro", "Helvetica Neue", Arial, sans-serif;
+  --font-fallback: "Roboto", "Open Sans", "Lato", sans-serif; /* Fallback for SF Pro */
+  --font-monospace: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+
+  /* Layout & Sizing */
+  --border-radius-base: 8px;
+  --spacing-unit: 8px; /* Base unit for margins, paddings */
+
+  /* Shadows */
+  --shadow-light: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-medium: 0 4px 8px rgba(0, 0, 0, 0.15);
+
+  /* Text Colors (WCAG AA Compliance - examples, adjust as needed) */
+  --text-color-primary-on-light: var(--color-graphite-gray); /* Graphite on Misty White */
+  --text-color-primary-on-dark: var(--color-misty-white);   /* Misty White on Graphite Gray */
+  --text-color-accent: var(--color-tech-blue);
+  --text-color-secondary-on-light: #555; /* Darker gray on Misty White */
+  --text-color-secondary-on-dark: #BBB;  /* Lighter gray on Graphite Gray */
+}
+
+/* Apply a natural box layout model to all elements */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  padding: 0;
+  font-family: var(--font-primary), var(--font-fallback);
+  background-color: var(--color-misty-white); /* Default background */
+  color: var(--text-color-primary-on-light);   /* Default text color */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-primary), var(--font-fallback);
+  color: var(--text-color-primary-on-light);
+  margin-top: calc(var(--spacing-unit) * 3);
+  margin-bottom: calc(var(--spacing-unit) * 1.5);
+}
+
+p {
+  margin-bottom: var(--spacing-unit);
+}
+
+a {
+  color: var(--color-tech-blue);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: var(--font-monospace);
+  background-color: #e9ecef; /* Light gray background for code blocks */
+  padding: calc(var(--spacing-unit) * 0.25) calc(var(--spacing-unit) * 0.5);
+  border-radius: calc(var(--border-radius-base) / 2);
+  color: #333;
+}
+
+/* Basic form styling (can be expanded in component-specific CSS) */
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+  font-size: 1rem;
+  border-radius: var(--border-radius-base);
+  border: 1px solid #ccc; /* Placeholder, refine with variables */
+  padding: calc(var(--spacing-unit) * 0.75) var(--spacing-unit);
+}
+
+button {
+  cursor: pointer;
+  background-color: var(--color-tech-blue);
+  color: var(--color-misty-white);
+  border: none;
+  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 2);
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+/* Utility classes (optional, can be expanded) */
+.text-center {
+  text-align: center;
+}
+
+.container {
+  width: 90%;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--spacing-unit);
+  padding-right: var(--spacing-unit);
 }

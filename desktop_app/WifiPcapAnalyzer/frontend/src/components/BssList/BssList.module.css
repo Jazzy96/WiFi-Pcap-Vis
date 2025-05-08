@@ -1,0 +1,166 @@
+.bssListWrapperInternal {
+  font-family: var(--font-primary);
+  color: var(--text-color-primary-on-light);
+}
+
+.bssListTitle {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text-color-primary-on-light);
+  margin-bottom: calc(var(--spacing-unit) * 2);
+  padding-bottom: var(--spacing-unit);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
+}
+
+.bssListStatus {
+  padding: calc(var(--spacing-unit) * 2.5);
+  text-align: center;
+  font-size: 1rem;
+  color: var(--text-color-secondary-on-light);
+  background-color: color-mix(in srgb, var(--color-misty-white) 90%, var(--color-graphite-gray) 5%);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-light);
+}
+
+.bssList {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 1.5); /* Space between BSS items */
+}
+
+.bssItem {
+  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
+  border-radius: var(--border-radius-base);
+  padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 2);
+  background-color: var(--color-misty-white);
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out, border-color 0.2s ease-in-out;
+  box-shadow: var(--shadow-light);
+}
+
+.bssItem:hover {
+  background-color: color-mix(in srgb, var(--color-tech-blue) 5%, var(--color-misty-white));
+  border-color: color-mix(in srgb, var(--color-tech-blue) 30%, transparent);
+  box-shadow: var(--shadow-medium);
+}
+
+.bssItem.expanded {
+  background-color: color-mix(in srgb, var(--color-tech-blue) 10%, var(--color-misty-white));
+  border-color: var(--color-tech-blue);
+  box-shadow: 0 0 calc(var(--spacing-unit) * 1) color-mix(in srgb, var(--color-tech-blue) 25%, transparent);
+}
+
+.bssItem.selectedForSta { /* Style for when BSS is selected to show its STAs */
+  /* Use a more prominent border and background */
+  background-color: color-mix(in srgb, var(--color-tech-blue) 20%, var(--color-misty-white)); /* Add background highlight */
+  /* Adjust padding slightly to account for thicker border */
+}
+
+.bssItem.selectedForSta .bssField,
+.bssItem.selectedForSta .bssField strong {
+  color: var(--text-color-primary-on-light);
+}
+
+.bssItem.selectedForSta .bssid,
+.bssItem.selectedForSta .ssid {
+  color: var(--text-color-primary-on-light) !important;
+}
+
+.bssSummary {
+  display: grid;
+  /* Explicit columns: BSSID/SSID (full), Signal (wider), Channel (narrow), STAs (narrow) */
+  grid-template-columns: 1fr auto auto auto;
+  /* Example widths: grid-template-columns: 1fr 120px 80px 80px; */
+  align-items: center;
+  gap: var(--spacing-unit) calc(var(--spacing-unit) * 1.5);
+}
+
+.bssField {
+  font-size: 0.9rem;
+  color: var(--text-color-secondary-on-light);
+  line-height: 1.4;
+}
+
+.bssField strong {
+  color: var(--text-color-primary-on-light);
+  font-weight: 500; /* Medium weight for labels */
+  margin-right: calc(var(--spacing-unit) * 0.5);
+}
+
+.bssid {
+  font-weight: 600 !important; /* Make BSSID stand out */
+  color: var(--color-tech-blue) !important;
+  grid-column: 1 / -1; /* Span full width */
+  font-size: 1.05rem !important;
+  margin-bottom: calc(var(--spacing-unit) * 0.5); /* Add space below BSSID */
+}
+
+.ssid {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-color-primary-on-light);
+  grid-column: 1 / -1; /* Span full width */
+  font-size: 1rem !important;
+  margin-bottom: var(--spacing-unit); /* Add space below SSID */
+}
+
+.signal {
+  grid-column: 1 / 2; /* First column after SSID */
+  min-width: 100px; /* Ensure signal has enough space */
+}
+.channel {
+  grid-column: 2 / 3; /* Second column */
+  min-width: 60px;
+  text-align: center;
+}
+.stationsSummary {
+  grid-column: 3 / 4; /* Third column */
+  min-width: 60px;
+  text-align: center;
+}
+
+/* .expandIndicator styles removed */
+
+
+.bssDetails {
+  margin-top: calc(var(--spacing-unit) * 1.5);
+  padding-top: calc(var(--spacing-unit) * 1.5);
+  border-top: 1px solid color-mix(in srgb, var(--color-graphite-gray) 15%, transparent);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); /* Responsive columns for details */
+  gap: var(--spacing-unit);
+}
+
+.bssDetails .bssField { /* Details fields can be slightly smaller */
+  font-size: 0.85rem;
+}
+.fullWidthField {
+  grid-column: 1 / -1; /* Make this field span all columns in the grid */
+}
+
+.htCaps, .vhtCaps {
+  /* Allow capability fields to span more columns if they contain a lot of info */
+  grid-column: span 2; /* Example: make it span two columns if grid allows */
+}
+
+/* Styles for STA list items if they were to be rendered within BssItem (currently not) */
+.staListItem {
+  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 15%, transparent);
+  border-radius: calc(var(--border-radius-base) / 2);
+  padding: var(--spacing-unit);
+  margin-bottom: var(--spacing-unit);
+  background-color: color-mix(in srgb, var(--color-misty-white) 95%, transparent);
+  font-size: 0.85rem;
+}
+
+.staField {
+  margin-bottom: calc(var(--spacing-unit) * 0.5);
+  font-size: 0.8rem;
+  color: var(--text-color-secondary-on-light);
+}
+
+.staField strong {
+  color: var(--text-color-primary-on-light);
+  font-weight: 500;
+  margin-right: calc(var(--spacing-unit) * 0.5);
+}

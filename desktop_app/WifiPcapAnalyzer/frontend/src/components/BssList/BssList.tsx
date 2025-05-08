@@ -1,89 +1,90 @@
 import React, { useState } from 'react';
-import { useAppState, useAppDispatch } from '../../contexts/DataContext'; // Import useAppDispatch
+import { useAppState, useAppDispatch } from '../../contexts/DataContext';
 import { BSS } from '../../types/data';
-import './BssList.css';
+import styles from './BssList.module.css'; // Import CSS Modules
+import Card from '../common/Card/Card'; // Import Card component
+// import Button from '../common/Button/Button'; // If needed for actions within the card
 
 interface BssItemProps {
   bss: BSS;
   isSelectedForStaList: boolean;
-  isExpanded: boolean; // Controlled from parent
-  onToggleExpand: (bssid: string) => void; // Function to toggle expansion in parent
+  isExpanded: boolean;
+  onToggleExpand: (bssid: string) => void;
 }
 
 const BssItem: React.FC<BssItemProps> = ({ bss, isSelectedForStaList, isExpanded, onToggleExpand }) => {
-  // const [isExpanded, setIsExpanded] = useState(false); // State moved to parent
   const dispatch = useAppDispatch();
-
   const stationCount = Object.keys(bss.associated_stas || {}).length;
 
   const handleItemClick = () => {
-    onToggleExpand(bss.bssid); // Tell parent to toggle expansion for this BSSID
-    // Also set this BSSID for STA list display when clicked
+    onToggleExpand(bss.bssid);
     dispatch({ type: 'SET_SELECTED_BSSID_FOR_STA_LIST', payload: bss.bssid });
   };
 
+  const cardTitle = `${bss.ssid || '(Hidden)'} (${bss.bssid})`;
+
   return (
-    <div
-      className={`bss-item ${isExpanded ? 'expanded' : ''} ${isSelectedForStaList ? 'selected-for-sta' : ''}`}
+    <Card
+      title={cardTitle}
+      className={`${styles.bssItem} ${isExpanded ? styles.expanded : ''} ${isSelectedForStaList ? styles.selectedForSta : ''}`}
       onClick={handleItemClick}
+      // role="button" // Card itself is not a button, but clickable
+      // tabIndex={0} // Consider accessibility for custom clickable elements
+      // onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleItemClick()}
+      // aria-expanded={isExpanded}
+      // aria-selected={isSelectedForStaList} // This might be better on a specific element if the whole card isn't "selectable" in ARIA terms
     >
-      <div className="bss-summary">
-        <div className="bss-field bssid"><strong>BSSID:</strong> {bss.bssid}</div>
-        <div className="bss-field ssid"><strong>SSID:</strong> {bss.ssid || '(Hidden)'}</div>
-        <div className="bss-field signal"><strong>Signal:</strong> {bss.signal_strength !== null ? `${bss.signal_strength} dBm` : 'N/A'}</div>
-        <div className="bss-field channel"><strong>Ch:</strong> {bss.channel}</div>
-        <div className="bss-field stations-summary"><strong>STAs:</strong> {stationCount}</div>
-        <span className={`expand-indicator ${isExpanded ? 'expanded' : ''}`}>{isExpanded ? '▼' : '▶'}</span>
+      <div className={styles.bssSummary}>
+        {/* <div className={`${styles.bssField} ${styles.bssid}`}><strong>BSSID:</strong> {bss.bssid}</div> */}
+        {/* <div className={`${styles.bssField} ${styles.ssid}`}><strong>SSID:</strong> {bss.ssid || '(Hidden)'}</div> */}
+        <div className={`${styles.bssField} ${styles.signal}`}><strong>Signal:</strong> {bss.signal_strength !== null ? `${bss.signal_strength} dBm` : 'N/A'}</div>
+        <div className={`${styles.bssField} ${styles.channel}`}><strong>Ch:</strong> {bss.channel}</div>
+        <div className={`${styles.bssField} ${styles.stationsSummary}`}><strong>STAs:</strong> {stationCount}</div>
+        {/* Expand indicator removed based on feedback */}
+        {/* <span className={`${styles.expandIndicator} ${isExpanded ? styles.expanded : ''}`}>{isExpanded ? '▼' : '▶'}</span> */}
       </div>
       {isExpanded && (
-        <div className="bss-details">
-          <div className="bss-field bandwidth"><strong>Bandwidth:</strong> {bss.bandwidth}</div>
-          <div className="bss-field security"><strong>Security:</strong> {bss.security}</div>
-          <div className="bss-field last-seen"><strong>Last Seen:</strong> {new Date(bss.last_seen).toLocaleTimeString()}</div>
+        <div className={styles.bssDetails}>
+          <div className={styles.bssField}><strong>Bandwidth:</strong> {bss.bandwidth}</div>
+          <div className={`${styles.bssField} ${styles.fullWidthField}`}><strong>Security:</strong> {bss.security}</div>
+          <div className={styles.bssField}><strong>Last Seen:</strong> {new Date(bss.last_seen).toLocaleTimeString()}</div>
           
           {bss.ht_capabilities && (
-            <div className="bss-field ht-caps">
+            <div className={`${styles.bssField} ${styles.htCaps}`}>
               <strong>HT Cap: </strong>
               {bss.ht_capabilities.channel_width_40mhz ? '40MHz, ' : '20MHz, '}
               {bss.ht_capabilities.short_gi_20mhz ? 'SGI_20 ' : ''}
               {bss.ht_capabilities.short_gi_40mhz ? 'SGI_40 ' : ''}
-              {/* Consider adding MCS set summary if needed, e.g., Max MCS */}
+              {/* MCS: {bss.ht_capabilities.supported_mcs_set} */}
             </div>
           )}
           {bss.vht_capabilities && (
-            <div className="bss-field vht-caps">
+            <div className={`${styles.bssField} ${styles.vhtCaps}`}>
               <strong>VHT Cap: </strong>
               {bss.vht_capabilities.channel_width_160mhz ? '160MHz, ' : (bss.vht_capabilities.channel_width_80plus80mhz ? '80+80MHz, ' : (bss.vht_capabilities.channel_width_80mhz ? '80MHz, ' : ''))}
               {bss.vht_capabilities.short_gi_80mhz ? 'SGI_80 ' : ''}
               {bss.vht_capabilities.short_gi_160mhz ? 'SGI_160 ' : ''}
-              {/* Consider adding MU-MIMO, SU/MU Beamformer status if important */}
+              {/* SU Beamformer: {bss.vht_capabilities.su_beamformer_capable ? 'Yes' : 'No'}, MU Beamformer: {bss.vht_capabilities.mu_beamformer_capable ? 'Yes' : 'No'} */}
             </div>
           )}
-          {/* Removed STA list rendering from here */}
         </div>
       )}
-    </div>
+    </Card>
   );
 };
 
 export const BssList: React.FC = () => {
   const appState = useAppState();
-  const [expandedBssid, setExpandedBssid] = useState<string | null>(null); // State for the single expanded BSS
+  const [expandedBssid, setExpandedBssid] = useState<string | null>(null);
 
   if (!appState || typeof appState.bssList === 'undefined') {
-    return <div className="bss-list-status">Initializing data context...</div>;
+    return <div className={styles.bssListStatus}>Initializing data context...</div>;
   }
 
-  // Remove isConnected from destructuring
   const { bssList, selectedBssidForStaList } = appState;
 
-  // Remove the check based on isConnected
-  // if (!isConnected && bssList.length === 0) {
-  //   return <div className="bss-list-status">Connecting or no data received yet...</div>;
-  // }
-
   if (bssList.length === 0) {
-    return <div className="bss-list-status">No BSS data available.</div>;
+    return <div className={styles.bssListStatus}>No BSS data available.</div>;
   }
 
   const sortedBssList = [...bssList].sort((a, b) => {
@@ -94,24 +95,27 @@ export const BssList: React.FC = () => {
     }
     const staCountA = Object.keys(a.associated_stas || {}).length;
     const staCountB = Object.keys(b.associated_stas || {}).length;
-    return staCountB - staCountA;
+    if (staCountB !== staCountA) {
+      return staCountB - staCountA;
+    }
+    return a.bssid.localeCompare(b.bssid); // Secondary sort by BSSID for stability
   });
 
   const handleToggleExpand = (bssid: string) => {
-    setExpandedBssid(prev => (prev === bssid ? null : bssid)); // Toggle: if same, collapse (null), else expand new one
+    setExpandedBssid(prev => (prev === bssid ? null : bssid));
   };
 
   return (
-    <div className="bss-list-wrapper-internal">
-      <h2>BSS List ({sortedBssList.length})</h2>
-      <div className="bss-list">
+    <div className={styles.bssListWrapperInternal}>
+      <h2 className={styles.bssListTitle}>BSS List ({sortedBssList.length})</h2>
+      <div className={styles.bssList}>
         {sortedBssList.map((bss) => (
           <BssItem
             key={bss.bssid}
             bss={bss}
             isSelectedForStaList={bss.bssid === selectedBssidForStaList}
-            isExpanded={bss.bssid === expandedBssid} // Pass expanded state down
-            onToggleExpand={handleToggleExpand} // Pass toggle function down
+            isExpanded={bss.bssid === expandedBssid}
+            onToggleExpand={handleToggleExpand}
           />
         ))}
       </div>
