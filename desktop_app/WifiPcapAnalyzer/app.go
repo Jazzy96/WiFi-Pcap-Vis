@@ -50,9 +50,11 @@ func (a *App) startup(ctx context.Context) {
 	log.Printf("Configuration loaded: %+v", a.appConfig)
 	config.GlobalConfig = a.appConfig // Make config globally accessible if needed by sub-packages
 
-	// Initialize State Manager
-	a.stateMgr = state_manager.NewStateManager()
-	log.Println("State Manager initialized.")
+	// Initialize State Manager with metrics calculation parameters
+	metricsInterval := 1 * time.Second // Calculate metrics every second
+	historyPoints := 60                // Keep 60 seconds of history
+	a.stateMgr = state_manager.NewStateManager(metricsInterval, historyPoints)
+	log.Printf("State Manager initialized (Metrics Interval: %v, History Points: %d).", metricsInterval, historyPoints)
 
 	// Initialize Packet Info Handler
 	a.packetInfoHandler = func(parsedInfo *frame_parser.ParsedFrameInfo) {
@@ -114,6 +116,25 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}()
 	log.Println("Pruning goroutine started.")
+
+	// Goroutine to periodically calculate metrics
+	metricsTicker := time.NewTicker(metricsInterval)
+	go func() {
+		defer metricsTicker.Stop()
+		for {
+			select {
+			case <-metricsTicker.C:
+				if a.isCaptureActive.Load() { // Only calculate if capture is active
+					a.stateMgr.PeriodicallyCalculateMetrics()
+				}
+			case <-a.ctx.Done(): // App is shutting down
+				log.Println("Metrics calculation ticker stopping due to app context done.")
+				return
+			}
+		}
+	}()
+	log.Println("Metrics calculation goroutine started.")
+
 	log.Println("Wails App startup complete.")
 }
 

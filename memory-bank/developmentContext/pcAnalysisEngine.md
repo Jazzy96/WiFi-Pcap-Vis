@@ -196,3 +196,19 @@ With this change, the IE parsing logic will operate on the correct byte slice (s
         *   Correct channel determination (prioritizing RadioTap, then DSSet IE if RadioTap channel is 0/absent).
 *   **Outcome:** All implemented unit tests passed successfully, verifying the intended improvements and robustness of the `parsePacketLayers` function. This significantly increases confidence in the frame parsing module.
 *   **Dependencies:** Added `github.com/stretchr/testify/assert` to `pc_analyzer/go.mod` for assertions.
+---
+## gopacket Parsing Robustness Enhancements (2025-05-08)
+
+*   **Issue:** Persistent `gopacket` parsing errors (e.g., `Dot11 length X too short`, `ERROR_NO_DOT11_LAYER`, `vendor extension size < 3`) were preventing the extraction of crucial data for metric calculation, leading to "N/A" values in the frontend.
+*   **Strategy & Changes in [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0):**
+    1.  **Stricter Error Handling for `packet.ErrorLayer()`:**
+        *   In `parsePacketLayers`, if `gopacket.NewPacket` results in `packet.ErrorLayer()` not being `nil`, the function now immediately returns an error. This prevents attempts to process packets that `gopacket` itself has identified as fundamentally flawed.
+    2.  **Mandatory Dot11 Layer:**
+        *   If the `Dot11` layer cannot be decoded from the packet (i.e., `packet.Layer(layers.LayerTypeDot11)` is `nil`), `parsePacketLayers` now returns an error, regardless of whether a Radiotap layer was present. This ensures that only packets with a successfully parsed 802.11 MAC layer proceed to detailed IE (Information Element) parsing and subsequent processing.
+    3.  **Adoption of `gopacket.Lazy` Decoding:**
+        *   The call to `gopacket.NewPacket` in `parsePacketLayers` was changed from using `gopacket.Default` to `gopacket.Lazy`. This option decodes layers on-demand, which can improve performance and potentially offer more resilience against certain types of packet corruption by not attempting to decode all layers upfront if some are malformed. The critical layers (Radiotap, Dot11, and subsequently IP/TCP/UDP for payload length) are still explicitly accessed, triggering their decoding.
+*   **Rationale:** These changes aim to make the packet parser more robust by:
+    *   Quickly discarding packets that `gopacket` flags with errors at the initial decoding stage.
+    *   Ensuring that a valid Dot11 layer, which is essential for most of the analysis, is present.
+    *   Leveraging `gopacket.Lazy` to potentially bypass issues in non-critical or malformed layers that might otherwise halt decoding with `gopacket.Default`.
+*   **Expected Outcome:** A reduction in unhandled parsing errors, leading to more reliable data extraction for metric calculations and fewer "N/A" displays on the frontend. Packets that are truly unparseable at the Dot11 level will be cleanly skipped.

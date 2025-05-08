@@ -6,6 +6,39 @@ This file records architectural and implementation decisions using a list format
 *
       
 ---
+### Decision (Code - Channel Utilization Calculation)
+[2025-05-08 16:36:00] - [Refactor: Use MAC Duration/ID for Channel Utilization]
+
+**Rationale:**
+The previous method for calculating channel utilization relied on estimating frame airtime based on PHY rate and frame length, which can be inaccurate and complex. The IEEE 802.11 standard's `Duration/ID` field in the MAC header provides a value (in microseconds) used for Network Allocation Vector (NAV) updates, representing the time the channel is expected to be busy. Using this field offers a potentially more accurate and standards-based way to estimate channel occupancy from the perspective of MAC layer reservations.
+
+**Details:**
+*   **Affected Files:**
+    *   [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0)
+    *   [`desktop_app/WifiPcapAnalyzer/state_manager/models.go`](desktop_app/WifiPcapAnalyzer/state_manager/models.go:0)
+    *   [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go:0)
+*   **Changes Made:**
+    1.  Added `MACDurationID uint16` to `ParsedFrameInfo` struct in `parser.go` and populated it from `layers.Dot11.DurationID`.
+    2.  Added `AccumulatedNavMicroseconds uint64` to `BSSInfo` struct in `models.go`.
+    3.  Modified `ProcessParsedFrame` in `manager.go` to accumulate `uint64(parsedInfo.MACDurationID)` into `bss.AccumulatedNavMicroseconds`. Added logic to skip accumulation for Control PS-Poll frames (`layers.Dot11TypeCtrlPowersavePoll`), where the Duration/ID field contains AID instead of time. Removed the accumulation logic based on `CalculateFrameAirtime`.
+    4.  Modified `PeriodicallyCalculateMetrics` in `manager.go` to calculate `ChannelUtilization` using `(float64(bss.AccumulatedNavMicroseconds) / (calculationWindowSeconds * 1_000_000)) * 100`.
+    5.  Ensured `bss.AccumulatedNavMicroseconds` is reset to 0 after each calculation cycle in `PeriodicallyCalculateMetrics`.
+*   **Expected Outcome:** Channel utilization metric is now calculated based on the aggregated NAV values from observed frames (excluding PS-Poll), providing an alternative measure of channel busyness based on MAC layer reservations. The dependency on the `CalculateFrameAirtime` function for this specific metric is removed.
+---
+### Decision (Debug - Backend Metrics Initialization)
+[2025-05-08 15:53:00] - [Bug Fix Strategy: Initialize `lastCalcTime` in BSSInfo/STAInfo Models]
+
+**Rationale:**
+The new performance metrics (channel utilization, throughput) were displaying as "N/A" on the frontend. Investigation revealed that `BSSInfo` and `STAInfo` objects, when newly created by `NewBSSInfo` and `NewSTAInfo` in [`desktop_app/WifiPcapAnalyzer/state_manager/models.go`](desktop_app/WifiPcapAnalyzer/state_manager/models.go:0), did not have their internal `lastCalcTime` field initialized. This caused the `PeriodicallyCalculateMetrics` function in [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go:0) to evaluate `lastCalcTime.IsZero()` as true for these new entries. Consequently, the metrics for these entries were set to 0 during their first calculation cycle. These zero values were then pushed to the frontend, likely resulting in the "N/A" display.
+
+**Details:**
+*   **Affected Files:**
+    *   [`desktop_app/WifiPcapAnalyzer/state_manager/models.go`](desktop_app/WifiPcapAnalyzer/state_manager/models.go:0)
+*   **Change Made:**
+    *   Modified the `NewBSSInfo` function to initialize the `lastCalcTime` field to `time.Now()`.
+    *   Modified the `NewSTAInfo` function to initialize the `lastCalcTime` field to `time.Now()`.
+*   **Expected Outcome:** By initializing `lastCalcTime` upon object creation, the first call to `PeriodicallyCalculateMetrics` for a new BSS or STA will have a valid `lastCalcTime`. This will allow `elapsed := now.Sub(bss.lastCalcTime).Seconds()` to return a small positive value (close to `metricsCalcInterval`), enabling the calculation of non-zero initial metrics (assuming some data has been processed for that BSS/STA). This should prevent the metrics from being 0 by default and resolve the "N/A" display issue for newly appearing devices.
+---
 ### Decision (Debug - PC Analyzer Frame Parsing Reversion)
 [2025-05-07 23:30:00] - [Reversion: Remove GBK Fallback for SSID Decoding]
 
@@ -437,3 +470,26 @@ User reported numerous 0dBm STA entries. Analysis of `pc_analyzer/state_manager/
     }
     ```
 *   **Expected Outcome:** STAs identified through data frames will now have their signal strength populated if the parsed frame information contains a non-zero signal value. This should reduce the number of STAs appearing with 0dBm signal strength.
+
+---
+### Decision (Debug - gopacket Parsing Errors)
+[2025-05-08 17:42:00] - [Strategy: Investigate and Mitigate gopacket Parsing Errors Affecting Metrics]
+
+**Rationale:**
+Extensive `gopacket` parsing errors (e.g., `Dot11 length X too short`, `ERROR_NO_DOT11_LAYER`) are preventing the extraction of `Duration/ID` and `TransportPayloadLength`, leading to "N/A" metrics on the frontend. A multi-pronged approach is needed to diagnose and address these issues.
+
+**Details:**
+*   **Affected Components:**
+    *   PC端分析引擎: [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0)
+    *   Potentially the raw pcap data itself.
+*   **Key Decisions & Investigation Paths:**
+    1.  **Prioritize Wireshark Analysis:** The primary step is for the user to analyze the problematic pcap files with Wireshark. This will help determine if the packets are inherently malformed/truncated or if the issue lies primarily with `gopacket`'s interpretation. Wireshark's "Expert Information" and byte-level inspection are crucial.
+    2.  **Enhance Parser Robustness (Iterative):**
+        *   **Stricter Error Handling:** In [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0), if `gopacket.NewPacket` returns an error in `ErrorLayer()`, or if the `Dot11` layer cannot be decoded, the `parsePacketLayers` function should more definitively return an error to `ProcessPcapStream`. This will ensure that critically flawed packets are skipped entirely and do not lead to partially processed data being used for metric calculation.
+        *   **Review `gopacket` Decoding Options:** Investigate if alternative `DecodeOptions` for `gopacket.NewPacket` (e.g., `gopacket.Lazy`) could offer better resilience against certain types of corruption, while still allowing necessary fields to be parsed. This requires careful testing to avoid unintended side effects (like layers not being parsed when needed).
+    3.  **Radiotap Integrity Check:** Given the `ERROR_NO_DOT11_LAYER: Dot11 layer is nil. Radiotap present: true.` errors, special attention should be paid to the Radiotap headers in Wireshark. Incorrect Radiotap length or field values could mislead `gopacket`.
+    4.  **Iterative Refinement:** Based on Wireshark findings, further refinements to the parsing logic in [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0) may be necessary. This could include more specific handling for certain frame types or error conditions if patterns emerge.
+*   **Expected Outcome:**
+    *   Clearer understanding of whether the root cause is malformed pcap data or `gopacket` parsing limitations.
+    *   Improved robustness of the packet parser to gracefully handle or skip malformed packets.
+    *   Reduction in parsing errors, leading to more successful extraction of data needed for metric calculations, ultimately resolving the "N/A" display on the frontend.

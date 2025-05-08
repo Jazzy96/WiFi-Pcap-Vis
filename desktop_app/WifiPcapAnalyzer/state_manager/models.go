@@ -17,6 +17,17 @@ type BSSInfo struct {
 	HECapabilities  *HECapabilities  `json:"he_capabilities,omitempty"`
 	// EHTCapabilities *EHTCapabilities `json:"eht_capabilities,omitempty"` // If needed
 	AssociatedSTAs map[string]*STAInfo `json:"associated_stas"` // Keyed by STA MAC
+
+	// New metrics for channel utilization and throughput
+	ChannelUtilization           float64   `json:"channel_utilization"`            // Current channel utilization percentage (0.0 - 100.0)
+	Throughput                   int64     `json:"throughput"`                     // Current throughput in bps
+	HistoricalChannelUtilization []float64 `json:"historical_channel_utilization"` // Historical channel utilization data
+	HistoricalThroughput         []int64   `json:"historical_throughput"`          // Historical throughput data
+	// Internal fields for metric calculation (not marshalled to JSON)
+	lastCalcTime               time.Time
+	totalAirtime               time.Duration // In a calculation window
+	totalTxBytes               int64         // In a calculation window
+	AccumulatedNavMicroseconds uint64        // Accumulated NAV duration in microseconds
 }
 
 // STA (Station) information
@@ -29,6 +40,19 @@ type STAInfo struct {
 	HTCapabilities  *HTCapabilities  `json:"ht_capabilities,omitempty"`
 	VHTCapabilities *VHTCapabilities `json:"vht_capabilities,omitempty"`
 	HECapabilities  *HECapabilities  `json:"he_capabilities,omitempty"`
+
+	// New metrics for channel utilization and throughput
+	ChannelUtilization           float64   `json:"channel_utilization"`            // Current channel utilization percentage (0.0 - 100.0) by this STA
+	UplinkThroughput             int64     `json:"uplink_throughput"`              // Current uplink throughput in bps
+	DownlinkThroughput           int64     `json:"downlink_throughput"`            // Current downlink throughput in bps
+	HistoricalChannelUtilization []float64 `json:"historical_channel_utilization"` // Historical channel utilization data for this STA
+	HistoricalUplinkThroughput   []int64   `json:"historical_uplink_throughput"`   // Historical uplink throughput data for this STA
+	HistoricalDownlinkThroughput []int64   `json:"historical_downlink_throughput"` // Historical downlink throughput data for this STA
+	// Internal fields for metric calculation (not marshalled to JSON)
+	lastCalcTime       time.Time
+	totalAirtime       time.Duration // In a calculation window, contributed by this STA
+	totalUplinkBytes   int64         // In a calculation window
+	totalDownlinkBytes int64         // In a calculation window
 }
 
 // HT (High Throughput) Capabilities
@@ -63,14 +87,16 @@ func NewBSSInfo(bssid string) *BSSInfo {
 		BSSID:          bssid,
 		AssociatedSTAs: make(map[string]*STAInfo),
 		LastSeen:       time.Now().UnixMilli(),
+		lastCalcTime:   time.Now(), // Initialize lastCalcTime
 	}
 }
 
 // Helper function to create a new STAInfo
 func NewSTAInfo(mac string) *STAInfo {
 	return &STAInfo{
-		MACAddress: mac,
-		LastSeen:   time.Now().UnixMilli(),
+		MACAddress:   mac,
+		LastSeen:     time.Now().UnixMilli(),
+		lastCalcTime: time.Now(), // Initialize lastCalcTime
 	}
 }
 

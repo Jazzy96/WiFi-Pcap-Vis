@@ -1,0 +1,70 @@
+.panel {
+  padding: 15px;
+  background-color: var(--color-background-secondary); /* Assuming you have CSS variables for colors */
+  border-radius: var(--border-radius-medium);
+  box-shadow: var(--shadow-light);
+  height: 100%;
+  overflow-y: auto;
+  color: var(--color-text-primary);
+}
+
+.panelTitle {
+  font-size: 1.4em;
+  font-weight: 600;
+  margin-bottom: 15px;
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 10px;
+}
+
+.noSelection {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.metricItem {
+  background-color: var(--color-background-card);
+  padding: 10px 15px;
+  border-radius: var(--border-radius-small);
+  box-shadow: var(--shadow-extra-light);
+}
+
+.metricLabel {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-bottom: 5px;
+  font-size: 0.9em;
+}
+
+.metricValue {
+  font-size: 1.2em;
+  font-weight: 600;
+  color: var(--color-accent-blue); /* Or var(--color-text-emphasis) */
+}
+
+.chartContainer {
+  margin-top: 20px;
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: var(--color-background-card);
+  border-radius: var(--border-radius-small);
+  box-shadow: var(--shadow-extra-light);
+}
+
+.chartTitle {
+  font-size: 1.1em;
+  font-weight: 500;
+  margin-bottom: 10px;
+  color: var(--color-text-primary);
+}

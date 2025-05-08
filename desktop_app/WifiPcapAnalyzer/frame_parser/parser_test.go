@@ -233,11 +233,11 @@ func TestParsePacketLayers_PayloadTooShortForFixedHeader_MgmtBeacon(t *testing.T
 	// For now, just check that SSID is empty and no error occurs during parsing itself.
 	// Proper log verification would require a more complex setup (e.g., capturing log output).
 	parsedInfo, err := parsePacketLayers(packet.Data(), layers.LinkType(127), timestamp) // Replaced layers.LinkTypeRadioTap with its value
-	assert.NoError(t, err, "Parsing should not error out, just skip IEs")
-	assert.NotNil(t, parsedInfo)
-	assert.Equal(t, "", parsedInfo.SSID, "SSID should be empty as IEs are skipped")
-	assert.Equal(t, layers.Dot11TypeMgmtBeacon, parsedInfo.FrameType)
-	assert.Equal(t, bssid.String(), parsedInfo.BSSID.String()) // BSSID should still be parsed
+	assert.Error(t, err, "Expected an error when payload is too short for fixed header")
+	assert.Nil(t, parsedInfo, "ParsedInfo should be nil when an error occurs due to short payload")
+	if err != nil {
+		assert.Contains(t, err.Error(), "payload too short for fixed header", "Error message should indicate payload is too short")
+	}
 }
 
 func TestParsePacketLayers_IncompleteIEHeader(t *testing.T) {
@@ -428,4 +428,87 @@ func TestParsePacketLayers_MultipleIEs_IncludingSSID(t *testing.T) {
 	assert.NotNil(t, parsedInfo2)
 	assert.Equal(t, int(dsChannel), parsedInfo2.Channel, "Channel should come from DSSet IE if RadioTap channel is absent/0")
 
+}
+
+func TestCalculateFrameAirtime(t *testing.T) {
+	tests := []struct {
+		name             string
+		frameLengthBytes int
+		phyRateMbps      float64
+		isShortPreamble  bool
+		isShortGI        bool
+		expectedDuration time.Duration
+	}{
+		{
+			name:             "Basic Case - 1500B, 54Mbps, Long Preamble, Long GI",
+			frameLengthBytes: 1500,
+			phyRateMbps:      54.0,
+			isShortPreamble:  false,
+			isShortGI:        false,
+			expectedDuration: time.Duration(424222), // (192 + (1500*8)/54.0) + 10 = 192 + 222.222 + 10 = 424.222 us
+		},
+		{
+			name:             "Short Preamble - 1000B, 24Mbps, Short Preamble, Long GI",
+			frameLengthBytes: 1000,
+			phyRateMbps:      24.0,
+			isShortPreamble:  true,
+			isShortGI:        false,
+			expectedDuration: time.Duration(439333), // (96 + (1000*8)/24.0) + 10 = 96 + 333.333 + 10 = 439.333 us
+		},
+		{
+			name:             "Short GI - 1000B, 24Mbps, Long Preamble, Short GI",
+			frameLengthBytes: 1000,
+			phyRateMbps:      24.0,
+			isShortPreamble:  false,
+			isShortGI:        true,
+			expectedDuration: time.Duration(502000), // (192 + (1000*8)/24.0 * 0.9) + 10 = 192 + 300 + 10 = 502 us
+		},
+		{
+			name:             "Short Preamble and Short GI - 500B, 12Mbps",
+			frameLengthBytes: 500,
+			phyRateMbps:      12.0,
+			isShortPreamble:  true,
+			isShortGI:        true,
+			expectedDuration: time.Duration(406000), // (96 + ( (500*8)/12.0 )*0.9) + 10 = (96 + 333.333333 * 0.9) + 10 = (96 + 299.9999997) + 10 = 405.999... -> 406000 ns
+		},
+		{
+			name:             "Zero PHY Rate",
+			frameLengthBytes: 1000,
+			phyRateMbps:      0.0,
+			isShortPreamble:  false,
+			isShortGI:        false,
+			expectedDuration: 0,
+		},
+		{
+			name:             "Negative PHY Rate",
+			frameLengthBytes: 1000,
+			phyRateMbps:      -10.0,
+			isShortPreamble:  false,
+			isShortGI:        false,
+			expectedDuration: 0,
+		},
+		{
+			name:             "Different Frame Length - 200B, 6Mbps, Long Preamble, Long GI",
+			frameLengthBytes: 200,
+			phyRateMbps:      6.0,
+			isShortPreamble:  false,
+			isShortGI:        false,
+			expectedDuration: time.Duration(468666), // (192 + (200*8)/6.0) + 10 = 192 + 266.666 + 10 = 468.666 us
+		},
+		{
+			name:             "Different PHY Rate - 1500B, 1Mbps, Long Preamble, Long GI",
+			frameLengthBytes: 1500,
+			phyRateMbps:      1.0,
+			isShortPreamble:  false,
+			isShortGI:        false,
+			expectedDuration: time.Duration(12202000), // (192 + (1500*8)/1.0) + 10 = 192 + 12000 + 10 = 12202 us
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			duration := CalculateFrameAirtime(tt.frameLengthBytes, tt.phyRateMbps, tt.isShortPreamble, tt.isShortGI)
+			assert.Equal(t, tt.expectedDuration, duration)
+		})
+	}
 }

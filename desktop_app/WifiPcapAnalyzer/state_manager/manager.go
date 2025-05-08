@@ -20,15 +20,24 @@ type StateManager struct {
 	// Pending entries waiting for confirmation (seen once)
 	pendingBSSInfos map[string]time.Time // Key: BSSID, Value: First seen time
 	pendingSTAInfos map[string]time.Time // Key: STA MAC, Value: First seen time
+
+	// Metrics calculation parameters
+	metricsCalcInterval time.Duration // How often to calculate metrics
+	maxHistoryPoints    int           // Max number of historical data points
 }
 
 // NewStateManager creates a new StateManager.
-func NewStateManager() *StateManager {
+func NewStateManager(metricsInterval time.Duration, historyPoints int) *StateManager {
+	if historyPoints <= 0 {
+		historyPoints = 60 // Default to 60 points (e.g., 1 minute if interval is 1s)
+	}
 	return &StateManager{
-		bssInfos:        make(map[string]*BSSInfo),
-		staInfos:        make(map[string]*STAInfo),
-		pendingBSSInfos: make(map[string]time.Time),
-		pendingSTAInfos: make(map[string]time.Time),
+		bssInfos:            make(map[string]*BSSInfo),
+		staInfos:            make(map[string]*STAInfo),
+		pendingBSSInfos:     make(map[string]time.Time),
+		pendingSTAInfos:     make(map[string]time.Time),
+		metricsCalcInterval: metricsInterval,
+		maxHistoryPoints:    historyPoints,
 	}
 }
 
@@ -43,6 +52,18 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 	now := time.Now()
 	nowMilli := now.UnixMilli()
 	confirmationWindow := 1 * time.Minute // 1 minute confirmation window
+
+	// Calculate data length for metrics (airtime calculation is removed)
+	// frameAirtime := frame_parser.CalculateFrameAirtime(parsedInfo.FrameLength, parsedInfo.PHYRateMbps, parsedInfo.IsShortPreamble, parsedInfo.IsShortGI)
+	frameDataLength := 0
+	if parsedInfo.FrameType.MainType() == layers.Dot11TypeData {
+		if parsedInfo.TransportPayloadLength > 0 {
+			frameDataLength = parsedInfo.TransportPayloadLength
+		} else {
+			// Option A: Ignore frame for throughput if TransportPayloadLength is not valid.
+			// No bytes are added to frameDataLength, so it remains 0.
+		}
+	}
 
 	// --- Helper function to handle STA update/creation ---
 	handleSTA := func(mac net.HardwareAddr, isSource bool) {
@@ -68,7 +89,7 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 				// Exists in pending list, check time window
 				if now.Sub(firstSeenTime) < confirmationWindow {
 					// Seen again within the window, confirm it!
-					log.Printf("DEBUG_STATE_MANAGER: Confirming STA %s (seen again within %v)", macStr, confirmationWindow)
+					// log.Printf("DEBUG_STATE_MANAGER: Confirming STA %s (seen again within %v)", macStr, confirmationWindow)
 					delete(sm.pendingSTAInfos, macStr) // Remove from pending
 					sta = NewSTAInfo(macStr)           // Create new STA
 					sta.LastSeen = nowMilli
@@ -97,12 +118,12 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 					sm.staInfos[macStr] = sta // Add to confirmed list
 				} else {
 					// Seen again, but outside the window. Reset the timer.
-					log.Printf("DEBUG_STATE_MANAGER: Re-pending STA %s (seen again after %v)", macStr, now.Sub(firstSeenTime))
+					// log.Printf("DEBUG_STATE_MANAGER: Re-pending STA %s (seen again after %v)", macStr, now.Sub(firstSeenTime))
 					sm.pendingSTAInfos[macStr] = now // Update timestamp
 				}
 			} else {
 				// First time seeing this STA, add to pending list
-				log.Printf("DEBUG_STATE_MANAGER: Pending STA %s (first seen)", macStr)
+				// log.Printf("DEBUG_STATE_MANAGER: Pending STA %s (first seen)", macStr)
 				sm.pendingSTAInfos[macStr] = now
 			}
 		}
@@ -245,7 +266,7 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 
 			// Critical check: Do not process or create BSSInfo for broadcast BSSID
 			if bssidStr == "ff:ff:ff:ff:ff:ff" {
-				log.Printf("DEBUG_STATE_MANAGER: Ignoring Mgmt frame with broadcast BSSID: %s. SA: %s, DA: %s, FrameType: %s", bssidStr, parsedInfo.SA, parsedInfo.DA, parsedInfo.FrameType.String())
+				// log.Printf("DEBUG_STATE_MANAGER: Ignoring Mgmt frame with broadcast BSSID: %s. SA: %s, DA: %s, FrameType: %s", bssidStr, parsedInfo.SA, parsedInfo.DA, parsedInfo.FrameType.String())
 				return // Exit early, do not create/update BSS for ff:ff:ff:ff:ff:ff
 			} // Removed broadcast check here as it's covered by isUnicastMAC
 
@@ -322,13 +343,13 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 						// Exists in pending, check time window
 						if now.Sub(firstSeenTime) < confirmationWindow {
 							// Seen again within window, try to confirm
-							log.Printf("DEBUG_STATE_MANAGER: Confirming BSS %s (seen again within %v)", bssidStr, confirmationWindow)
+							// log.Printf("DEBUG_STATE_MANAGER: Confirming BSS %s (seen again within %v)", bssidStr, confirmationWindow)
 							delete(sm.pendingBSSInfos, bssidStr) // Remove from pending
 
 							// --- Apply RSSI and Completeness Filters before confirming ---
 							minRSSI := config.GlobalConfig.MinBSSCreationRSSI
 							if parsedInfo.SignalStrength < minRSSI {
-								log.Printf("DEBUG_STATE_MANAGER: Confirmation failed for BSS %s. Signal %d dBm < threshold %d dBm.", bssidStr, parsedInfo.SignalStrength, minRSSI)
+								// log.Printf("DEBUG_STATE_MANAGER: Confirmation failed for BSS %s. Signal %d dBm < threshold %d dBm.", bssidStr, parsedInfo.SignalStrength, minRSSI)
 							} else {
 								isSsidMissing := (parsedInfo.SSID == "" || parsedInfo.SSID == "[N/A]" || parsedInfo.SSID == "<Hidden SSID>" || parsedInfo.SSID == "<Invalid SSID Encoding>")
 								isSecurityMissing := len(parsedInfo.RSNRaw) == 0
@@ -393,17 +414,17 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 										}
 									}
 									sm.bssInfos[bssidStr] = bss // Add to confirmed map
-									log.Printf("DEBUG_STATE_MANAGER: Confirmed and created new BSS %s", bssidStr)
+									// log.Printf("DEBUG_STATE_MANAGER: Confirmed and created new BSS %s", bssidStr)
 								}
 							}
 						} else {
 							// Seen again, but outside window. Reset timer.
-							log.Printf("DEBUG_STATE_MANAGER: Re-pending BSS %s (seen again after %v)", bssidStr, now.Sub(firstSeenTime))
+							// log.Printf("DEBUG_STATE_MANAGER: Re-pending BSS %s (seen again after %v)", bssidStr, now.Sub(firstSeenTime))
 							sm.pendingBSSInfos[bssidStr] = now // Update timestamp
 						}
 					} else {
 						// First time seeing this BSS, add to pending list
-						log.Printf("DEBUG_STATE_MANAGER: Pending BSS %s (first seen)", bssidStr)
+						// log.Printf("DEBUG_STATE_MANAGER: Pending BSS %s (first seen)", bssidStr)
 						sm.pendingBSSInfos[bssidStr] = now
 					}
 				}
@@ -493,7 +514,7 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 					}
 					sta.AssociatedBSSID = apMAC
 					bss.AssociatedSTAs[staMAC] = sta
-					log.Printf("DEBUG_STATE_MANAGER: Associated confirmed STA %s with confirmed BSS %s based on data frame.", staMAC, apMAC)
+					// log.Printf("DEBUG_STATE_MANAGER: Associated confirmed STA %s with confirmed BSS %s based on data frame.", staMAC, apMAC)
 				} else {
 					// Already associated, just ensure STA is in the map (should be)
 					if _, ok := bss.AssociatedSTAs[staMAC]; !ok {
@@ -598,8 +619,212 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 	*/
 	// --- End Original Data Frame Logic ---
 
-	log.Printf("DEBUG_STATE_MANAGER: BSS Count: %d, STA Count: %d, Pending BSS: %d, Pending STA: %d",
-		len(sm.bssInfos), len(sm.staInfos), len(sm.pendingBSSInfos), len(sm.pendingSTAInfos))
+	// Accumulate metrics for confirmed BSS and STA
+	if parsedInfo.BSSID != nil {
+		bssidStr := parsedInfo.BSSID.String()
+		if bss, exists := sm.bssInfos[bssidStr]; exists && bss != nil {
+			// bss.totalAirtime += frameAirtime // Airtime calculation removed
+			if frameDataLength > 0 {
+				bss.totalTxBytes += int64(frameDataLength)
+				// log.Printf("DEBUG_METRIC_ACCUM: BSSID: %s, Added Bytes: %d, Total Bytes: %d for Throughput", bssidStr, frameDataLength, bss.totalTxBytes)
+			}
+
+			// Accumulate MACDurationID
+			// Check if the frame is a Control frame and PS-Poll subtype
+			isCtrlPSPoll := false
+			if parsedInfo.Dot11Layer != nil {
+				// Directly compare the full type with the Powersave-Poll constant
+				// The constant name is Dot11TypeCtrlPowersavePoll
+				if parsedInfo.Dot11Layer.Type == layers.Dot11TypeCtrlPowersavePoll {
+					isCtrlPSPoll = true
+					// log.Printf("DEBUG_NAV_SKIP: Skipping NAV accumulation for PS-Poll frame. BSSID: %s, SA: %s, DurationID: %d", bssidStr, parsedInfo.SA, parsedInfo.MACDurationID)
+				}
+			}
+
+			if !isCtrlPSPoll {
+				bss.AccumulatedNavMicroseconds += uint64(parsedInfo.MACDurationID)
+				// log.Printf("DEBUG_METRIC_ACCUM: BSSID: %s, Added NAV Microseconds: %d, Total NAV Microseconds: %d for Channel Utilization", bssidStr, parsedInfo.MACDurationID, bss.AccumulatedNavMicroseconds)
+			}
+		}
+	}
+
+	// Accumulate for specific STA if SA is confirmed
+	if parsedInfo.SA != nil && isUnicastMAC(parsedInfo.SA) {
+		saStr := parsedInfo.SA.String()
+		if sta, exists := sm.staInfos[saStr]; exists && sta != nil {
+			// sta.totalAirtime += frameAirtime // Airtime calculation removed
+			if frameDataLength > 0 {
+				originalUplink := sta.totalUplinkBytes
+				originalDownlink := sta.totalDownlinkBytes
+				// Determine uplink/downlink based on confirmed association
+				if sta.AssociatedBSSID != "" {
+					if parsedInfo.DA != nil && parsedInfo.DA.String() == sta.AssociatedBSSID {
+						sta.totalUplinkBytes += int64(frameDataLength)
+						// log.Printf("DEBUG_METRIC_ACCUM: STA: %s (to BSS: %s), Added Uplink Bytes: %d, Total Uplink: %d", saStr, sta.AssociatedBSSID, frameDataLength, sta.totalUplinkBytes)
+					} else if parsedInfo.SA.String() == sta.AssociatedBSSID { // Frame from AP to STA
+						sta.totalDownlinkBytes += int64(frameDataLength)
+						// log.Printf("DEBUG_METRIC_ACCUM: STA: %s (from BSS: %s), Added Downlink Bytes: %d, Total Downlink: %d", saStr, sta.AssociatedBSSID, frameDataLength, sta.totalDownlinkBytes)
+					} else {
+						// Could be broadcast/multicast from STA, count as uplink? Or ignore?
+						// For now, let's count as uplink if DA is not the associated AP.
+						sta.totalUplinkBytes += int64(frameDataLength)
+						// log.Printf("DEBUG_METRIC_ACCUM: STA: %s (DA not BSS), Added Uplink Bytes: %d, Total Uplink: %d", saStr, frameDataLength, sta.totalUplinkBytes)
+					}
+				} else {
+					// Unassociated STA sending data, count as uplink
+					sta.totalUplinkBytes += int64(frameDataLength)
+					// log.Printf("DEBUG_METRIC_ACCUM: STA: %s (Unassociated), Added Uplink Bytes: %d, Total Uplink: %d", saStr, frameDataLength, sta.totalUplinkBytes)
+				}
+				if sta.totalUplinkBytes != originalUplink || sta.totalDownlinkBytes != originalDownlink {
+					// This log is redundant if the specific UL/DL logs above are active.
+					// log.Printf("DEBUG_METRIC_ACCUM_STA_BYTES: STA: %s, Added Bytes: %d. Uplink: %d -> %d, Downlink: %d -> %d", saStr, frameDataLength, originalUplink, sta.totalUplinkBytes, originalDownlink, sta.totalDownlinkBytes)
+				}
+			}
+		}
+	}
+	// Accumulate airtime for TA if different and confirmed (Airtime calculation removed)
+	/*
+		if parsedInfo.TA != nil && isUnicastMAC(parsedInfo.TA) && (parsedInfo.SA == nil || parsedInfo.TA.String() != parsedInfo.SA.String()) {
+			taStr := parsedInfo.TA.String()
+			if sta, exists := sm.staInfos[taStr]; exists && sta != nil {
+				// sta.totalAirtime += frameAirtime // TA also contributes to airtime
+			}
+		}
+	*/
+
+	// log.Printf("DEBUG_STATE_MANAGER: BSS Count: %d, STA Count: %d, Pending BSS: %d, Pending STA: %d",
+	// 	len(sm.bssInfos), len(sm.staInfos), len(sm.pendingBSSInfos), len(sm.pendingSTAInfos))
+}
+
+// PeriodicallyCalculateMetrics calculates and updates metrics for all confirmed BSSs and STAs.
+func (sm *StateManager) PeriodicallyCalculateMetrics() {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	now := time.Now()
+	// log.Printf("DEBUG_METRIC_CALC_PERIODIC_START: Initiating periodic metrics calculation. CurrentTime: %s, LastCalcInterval: %v", now.Format(time.RFC3339), sm.metricsCalcInterval)
+	calculationWindowSeconds := sm.metricsCalcInterval.Seconds()
+	if calculationWindowSeconds <= 0 {
+		log.Printf("WARN_METRIC_CALC_PERIODIC: calculationWindowSeconds is <= 0 (%f), defaulting to 1.0s", calculationWindowSeconds)
+		calculationWindowSeconds = 1.0 // Avoid division by zero, default to 1 second
+	}
+
+	for bssID, bss := range sm.bssInfos {
+		if bss == nil {
+			log.Printf("WARN_METRIC_CALC_PERIODIC: Encountered nil BSS for BSSID: %s, skipping.", bssID)
+			continue
+		}
+		// log.Printf("DEBUG_METRIC_CALC_BSS_PRE: BSSID: %s, LastCalcTime: %s, AccumulatedNavMicroseconds: %d, TotalTxBytes: %d", bssID, bss.lastCalcTime.Format(time.RFC3339), bss.AccumulatedNavMicroseconds, bss.totalTxBytes)
+
+		// originalChannelUtilization := bss.ChannelUtilization
+		// originalThroughput := bss.Throughput // Commented out as it's unused after commenting logs
+
+		if bss.lastCalcTime.IsZero() {
+			// log.Printf("DEBUG_METRIC_CALC_BSS_INIT: BSSID: %s, First calculation cycle (lastCalcTime is zero). Setting metrics to 0.", bssID)
+			bss.ChannelUtilization = 0
+			bss.Throughput = 0
+		} else {
+			elapsed := now.Sub(bss.lastCalcTime).Seconds()
+			// log.Printf("DEBUG_METRIC_CALC_BSS_ELAPSED: BSSID: %s, Time since last calculation: %.2fs", bssID, elapsed)
+			if elapsed > 0 { // Technically, calculationWindowSeconds is used, but elapsed confirms activity.
+				totalWindowMicroseconds := calculationWindowSeconds * 1_000_000
+				if totalWindowMicroseconds > 0 {
+					bss.ChannelUtilization = (float64(bss.AccumulatedNavMicroseconds) / totalWindowMicroseconds) * 100
+				} else {
+					bss.ChannelUtilization = 0
+				}
+
+				if bss.ChannelUtilization < 0 {
+					bss.ChannelUtilization = 0
+				}
+				if bss.ChannelUtilization > 100.0 {
+					bss.ChannelUtilization = 100.0
+				}
+				bss.Throughput = int64(float64(bss.totalTxBytes*8) / calculationWindowSeconds)
+			} else {
+				// log.Printf("DEBUG_METRIC_CALC_BSS_NO_ELAPSED: BSSID: %s, Elapsed time is not positive (%.2fs). Setting metrics to 0 for this cycle.", bssID, elapsed)
+				bss.ChannelUtilization = 0
+				bss.Throughput = 0
+			}
+		}
+		// log.Printf("DEBUG_METRIC_CALC_BSS_POST: BSSID: %s, Calculated ChannelUtilization: %.2f%% (was %.2f%%), Throughput: %d bps (was %d bps)", bssID, bss.ChannelUtilization, originalChannelUtilization, bss.Throughput, originalThroughput)
+		// log.Printf("DEBUG_METRIC_UPDATE_BSS: Updating BSS %s: ChannelUtil=%.2f, Throughput=%d", bssID, bss.ChannelUtilization, bss.Throughput)
+
+		bss.HistoricalChannelUtilization = append(bss.HistoricalChannelUtilization, bss.ChannelUtilization)
+		if len(bss.HistoricalChannelUtilization) > sm.maxHistoryPoints {
+			bss.HistoricalChannelUtilization = bss.HistoricalChannelUtilization[1:]
+		}
+		bss.HistoricalThroughput = append(bss.HistoricalThroughput, bss.Throughput)
+		if len(bss.HistoricalThroughput) > sm.maxHistoryPoints {
+			bss.HistoricalThroughput = bss.HistoricalThroughput[1:]
+		}
+
+		bss.totalAirtime = 0
+		bss.totalTxBytes = 0
+		bss.AccumulatedNavMicroseconds = 0
+		bss.lastCalcTime = now
+	}
+
+	for staMAC, sta := range sm.staInfos {
+		if sta == nil {
+			log.Printf("WARN_METRIC_CALC_PERIODIC: Encountered nil STA for MAC: %s, skipping.", staMAC)
+			continue
+		}
+		// log.Printf("DEBUG_METRIC_CALC_STA_PRE: STA: %s, LastCalcTime: %s, TotalAirtime: %v, TotalUplinkBytes: %d, TotalDownlinkBytes: %d", staMAC, sta.lastCalcTime.Format(time.RFC3339), sta.totalAirtime, sta.totalUplinkBytes, sta.totalDownlinkBytes)
+
+		// originalSTAChannelUtilization := sta.ChannelUtilization
+		// originalSTAUplinkThroughput := sta.UplinkThroughput // Commented out as it's unused after commenting logs
+		// originalSTADownlinkThroughput := sta.DownlinkThroughput // Commented out as it's unused after commenting logs
+
+		if sta.lastCalcTime.IsZero() {
+			// log.Printf("DEBUG_METRIC_CALC_STA_INIT: STA: %s, First calculation cycle. Setting metrics to 0.", staMAC)
+			sta.ChannelUtilization = 0
+			sta.UplinkThroughput = 0
+			sta.DownlinkThroughput = 0
+		} else {
+			elapsed := now.Sub(sta.lastCalcTime).Seconds()
+			// log.Printf("DEBUG_METRIC_CALC_STA_ELAPSED: STA: %s, Time since last calculation: %.2fs", staMAC, elapsed)
+			if elapsed > 0 {
+				// STA Channel Utilization - still using old totalAirtime. Consider changing to MACDurationID if applicable for STAs.
+				// For now, log the existing calculation.
+				sta.ChannelUtilization = (sta.totalAirtime.Seconds() / calculationWindowSeconds) * 100
+				if sta.ChannelUtilization < 0 {
+					sta.ChannelUtilization = 0
+				}
+				if sta.ChannelUtilization > 100.0 {
+					sta.ChannelUtilization = 100.0
+				}
+				sta.UplinkThroughput = int64(float64(sta.totalUplinkBytes*8) / calculationWindowSeconds)
+				sta.DownlinkThroughput = int64(float64(sta.totalDownlinkBytes*8) / calculationWindowSeconds)
+			} else {
+				// log.Printf("DEBUG_METRIC_CALC_STA_NO_ELAPSED: STA: %s, Elapsed time is not positive (%.2fs). Setting metrics to 0.", staMAC, elapsed)
+				sta.ChannelUtilization = 0
+				sta.UplinkThroughput = 0
+				sta.DownlinkThroughput = 0
+			}
+		}
+		// log.Printf("DEBUG_METRIC_CALC_STA_POST: STA: %s, Calculated CU: %.2f%% (was %.2f%%), UL: %d bps (was %d), DL: %d bps (was %d)", staMAC, sta.ChannelUtilization, originalSTAChannelUtilization, sta.UplinkThroughput, originalSTAUplinkThroughput, sta.DownlinkThroughput, originalSTADownlinkThroughput)
+		// log.Printf("DEBUG_METRIC_UPDATE_STA: Updating STA %s: ChannelUtil=%.2f, UplinkTput=%d, DownlinkTput=%d", staMAC, sta.ChannelUtilization, sta.UplinkThroughput, sta.DownlinkThroughput)
+
+		sta.HistoricalChannelUtilization = append(sta.HistoricalChannelUtilization, sta.ChannelUtilization)
+		if len(sta.HistoricalChannelUtilization) > sm.maxHistoryPoints {
+			sta.HistoricalChannelUtilization = sta.HistoricalChannelUtilization[1:]
+		}
+		sta.HistoricalUplinkThroughput = append(sta.HistoricalUplinkThroughput, sta.UplinkThroughput)
+		if len(sta.HistoricalUplinkThroughput) > sm.maxHistoryPoints {
+			sta.HistoricalUplinkThroughput = sta.HistoricalUplinkThroughput[1:]
+		}
+		sta.HistoricalDownlinkThroughput = append(sta.HistoricalDownlinkThroughput, sta.DownlinkThroughput)
+		if len(sta.HistoricalDownlinkThroughput) > sm.maxHistoryPoints {
+			sta.HistoricalDownlinkThroughput = sta.HistoricalDownlinkThroughput[1:]
+		}
+
+		sta.totalAirtime = 0
+		sta.totalUplinkBytes = 0
+		sta.totalDownlinkBytes = 0
+		sta.lastCalcTime = now
+	}
+	// log.Printf("DEBUG_METRIC_CALC_PERIODIC_END: Metrics calculation finished for %d BSSs and %d STAs.", len(sm.bssInfos), len(sm.staInfos))
 }
 
 // GetSnapshot returns a deep copy of the current BSS and STA information.
@@ -609,37 +834,58 @@ func (sm *StateManager) GetSnapshot() Snapshot {
 	defer sm.mutex.RUnlock()
 
 	bssList := make([]*BSSInfo, 0, len(sm.bssInfos))
-	for _, bss := range sm.bssInfos { // Iterate directly over confirmed BSSs
-		// Create a deep copy of BSSInfo
-		bssCopy := *bss
-		bssCopy.AssociatedSTAs = make(map[string]*STAInfo) // Initialize fresh map for the copy
+	for bssidKey, bssOriginal := range sm.bssInfos {
+		if bssOriginal == nil {
+			log.Printf("WARN_SNAPSHOT: Skipping nil BSS in main map for BSSID: %s", bssidKey)
+			continue
+		}
+		bssCopy := *bssOriginal
+		bssCopy.AssociatedSTAs = make(map[string]*STAInfo)
+		bssCopy.HistoricalChannelUtilization = append([]float64(nil), bssOriginal.HistoricalChannelUtilization...)
+		bssCopy.HistoricalThroughput = append([]int64(nil), bssOriginal.HistoricalThroughput...)
 
-		// Create deep copies of associated STAs (only confirmed ones)
-		for staMAC, _ := range bss.AssociatedSTAs { // Ignore staOriginal using _
-			// Ensure the STA being pointed to still exists in the confirmed staInfos map
+		// log.Printf("DEBUG_SNAPSHOT_BSS: BSSID: %s, SSID: %s, ChannelUtil: %.2f, Throughput: %d, NumAssocSTAsInOrig: %d",
+		// 	bssCopy.BSSID, bssCopy.SSID, bssCopy.ChannelUtilization, bssCopy.Throughput, len(bssOriginal.AssociatedSTAs))
+
+		for staMAC, _ := range bssOriginal.AssociatedSTAs {
 			if mainSta, mainStaExists := sm.staInfos[staMAC]; mainStaExists && mainSta != nil {
-				staCopy := *mainSta // Copy from the main confirmed STA map
-				// Clear association on the copy if it points to a BSSID no longer confirmed (shouldn't happen often with current logic)
-				if _, bssStillExists := sm.bssInfos[staCopy.AssociatedBSSID]; !bssStillExists && staCopy.AssociatedBSSID != "" {
-					staCopy.AssociatedBSSID = ""
+				staCopyForBss := *mainSta
+				staCopyForBss.HistoricalChannelUtilization = append([]float64(nil), mainSta.HistoricalChannelUtilization...)
+				staCopyForBss.HistoricalUplinkThroughput = append([]int64(nil), mainSta.HistoricalUplinkThroughput...)
+				staCopyForBss.HistoricalDownlinkThroughput = append([]int64(nil), mainSta.HistoricalDownlinkThroughput...)
+				if _, bssStillExists := sm.bssInfos[staCopyForBss.AssociatedBSSID]; !bssStillExists && staCopyForBss.AssociatedBSSID != "" {
+					staCopyForBss.AssociatedBSSID = ""
 				}
-				bssCopy.AssociatedSTAs[staMAC] = &staCopy
+				bssCopy.AssociatedSTAs[staMAC] = &staCopyForBss
+				// log.Printf("DEBUG_SNAPSHOT_BSS_STA: Associated STA %s to BSS %s in snapshot. STA CU: %.2f, UL: %d, DL: %d", staMAC, bssCopy.BSSID, staCopyForBss.ChannelUtilization, staCopyForBss.UplinkThroughput, staCopyForBss.DownlinkThroughput)
+			} else {
+				log.Printf("WARN_SNAPSHOT: STA %s associated with BSS %s not found in main STA list or is nil.", staMAC, bssOriginal.BSSID)
 			}
 		}
 		bssList = append(bssList, &bssCopy)
 	}
 
 	staList := make([]*STAInfo, 0, len(sm.staInfos))
-	for _, sta := range sm.staInfos { // Iterate directly over confirmed STAs
-		staCopy := *sta
-		// Ensure the associated BSSID is still valid and confirmed
+	for staMAC, staOriginal := range sm.staInfos {
+		if staOriginal == nil {
+			log.Printf("WARN_SNAPSHOT: Skipping nil STA in main map for MAC: %s", staMAC)
+			continue
+		}
+		staCopy := *staOriginal
+		staCopy.HistoricalChannelUtilization = append([]float64(nil), staOriginal.HistoricalChannelUtilization...)
+		staCopy.HistoricalUplinkThroughput = append([]int64(nil), staOriginal.HistoricalUplinkThroughput...)
+		staCopy.HistoricalDownlinkThroughput = append([]int64(nil), staOriginal.HistoricalDownlinkThroughput...)
+
 		if staCopy.AssociatedBSSID != "" {
 			if _, bssExists := sm.bssInfos[staCopy.AssociatedBSSID]; !bssExists {
-				staCopy.AssociatedBSSID = "" // Clear if associated BSS is no longer confirmed
+				staCopy.AssociatedBSSID = ""
 			}
 		}
 		staList = append(staList, &staCopy)
+		// log.Printf("DEBUG_SNAPSHOT_STA: STA: %s, AssociatedBSSID: %s, CU: %.2f, UL: %d, DL: %d",
+		// 	staCopy.MACAddress, staCopy.AssociatedBSSID, staCopy.ChannelUtilization, staCopy.UplinkThroughput, staCopy.DownlinkThroughput)
 	}
+	// log.Printf("DEBUG_SNAPSHOT_SUMMARY: Created snapshot with %d BSSs and %d STAs.", len(bssList), len(staList))
 	return Snapshot{BSSs: bssList, STAs: staList}
 }
 
@@ -952,7 +1198,7 @@ func (sm *StateManager) PruneOldEntries(timeout time.Duration) {
 	// However, to be explicit and clear, let's get the counts just before the unlock would happen.
 	// The defer statement means sm.mutex.Unlock() will be called when ProcessParsedFrame returns.
 	// So, any statement before the function's closing brace `}` is effectively within the lock.
-	log.Printf("DEBUG_STATE_MANAGER: BSS Count: %d, STA Count: %d", len(sm.bssInfos), len(sm.staInfos))
+	// log.Printf("DEBUG_STATE_MANAGER: BSS Count: %d, STA Count: %d", len(sm.bssInfos), len(sm.staInfos))
 }
 
 // GetSnapshot returns a deep copy of the current BSS and STA information.

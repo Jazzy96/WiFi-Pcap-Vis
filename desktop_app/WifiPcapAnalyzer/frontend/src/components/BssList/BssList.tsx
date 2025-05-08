@@ -19,6 +19,8 @@ const BssItem: React.FC<BssItemProps> = ({ bss, isSelectedForStaList, isExpanded
   const handleItemClick = () => {
     onToggleExpand(bss.bssid);
     dispatch({ type: 'SET_SELECTED_BSSID_FOR_STA_LIST', payload: bss.bssid });
+    // Also set this BSS as the selected performance target
+    dispatch({ type: 'SET_SELECTED_PERFORMANCE_TARGET', payload: { type: 'bss', id: bss.bssid } });
   };
 
   const cardTitle = `${bss.ssid || '(Hidden)'} (${bss.bssid})`;
@@ -40,6 +42,8 @@ const BssItem: React.FC<BssItemProps> = ({ bss, isSelectedForStaList, isExpanded
         <div className={`${styles.bssField} ${styles.signal}`}><strong>Signal:</strong> {bss.signal_strength !== null ? `${bss.signal_strength} dBm` : 'N/A'}</div>
         <div className={`${styles.bssField} ${styles.channel}`}><strong>Ch:</strong> {bss.channel}</div>
         <div className={`${styles.bssField} ${styles.stationsSummary}`}><strong>STAs:</strong> {stationCount}</div>
+        <div className={`${styles.bssField} ${styles.channelUtilization}`}><strong>Util:</strong> {bss.channel_utilization_percent !== undefined ? `${bss.channel_utilization_percent.toFixed(1)}%` : 'N/A'}</div>
+        <div className={`${styles.bssField} ${styles.throughput}`}><strong>Thrpt:</strong> {bss.total_throughput_mbps !== undefined ? `${bss.total_throughput_mbps.toFixed(2)} Mbps` : 'N/A'}</div>
         {/* Expand indicator removed based on feedback */}
         {/* <span className={`${styles.expandIndicator} ${isExpanded ? styles.expanded : ''}`}>{isExpanded ? '▼' : '▶'}</span> */}
       </div>
@@ -48,6 +52,9 @@ const BssItem: React.FC<BssItemProps> = ({ bss, isSelectedForStaList, isExpanded
           <div className={styles.bssField}><strong>Bandwidth:</strong> {bss.bandwidth}</div>
           <div className={`${styles.bssField} ${styles.fullWidthField}`}><strong>Security:</strong> {bss.security}</div>
           <div className={styles.bssField}><strong>Last Seen:</strong> {new Date(bss.last_seen).toLocaleTimeString()}</div>
+          {/* Detailed performance metrics for expanded view */}
+          <div className={`${styles.bssField} ${styles.fullWidthField}`}><strong>Channel Utilization:</strong> {bss.channel_utilization_percent !== undefined ? `${bss.channel_utilization_percent.toFixed(1)}%` : 'N/A'}</div>
+          <div className={`${styles.bssField} ${styles.fullWidthField}`}><strong>Total Throughput:</strong> {bss.total_throughput_mbps !== undefined ? `${bss.total_throughput_mbps.toFixed(2)} Mbps` : 'N/A'}</div>
           
           {bss.ht_capabilities && (
             <div className={`${styles.bssField} ${styles.htCaps}`}>

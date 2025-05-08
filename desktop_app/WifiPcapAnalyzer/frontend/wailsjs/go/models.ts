@@ -33,6 +33,12 @@ export namespace state_manager {
 	    ht_capabilities?: HTCapabilities;
 	    vht_capabilities?: VHTCapabilities;
 	    he_capabilities?: HECapabilities;
+	    channel_utilization: number;
+	    uplink_throughput: number;
+	    downlink_throughput: number;
+	    historical_channel_utilization: number[];
+	    historical_uplink_throughput: number[];
+	    historical_downlink_throughput: number[];
 	
 	    static createFrom(source: any = {}) {
 	        return new STAInfo(source);
@@ -47,6 +53,12 @@ export namespace state_manager {
 	        this.ht_capabilities = this.convertValues(source["ht_capabilities"], HTCapabilities);
 	        this.vht_capabilities = this.convertValues(source["vht_capabilities"], VHTCapabilities);
 	        this.he_capabilities = this.convertValues(source["he_capabilities"], HECapabilities);
+	        this.channel_utilization = source["channel_utilization"];
+	        this.uplink_throughput = source["uplink_throughput"];
+	        this.downlink_throughput = source["downlink_throughput"];
+	        this.historical_channel_utilization = source["historical_channel_utilization"];
+	        this.historical_uplink_throughput = source["historical_uplink_throughput"];
+	        this.historical_downlink_throughput = source["historical_downlink_throughput"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -131,6 +143,11 @@ export namespace state_manager {
 	    vht_capabilities?: VHTCapabilities;
 	    he_capabilities?: HECapabilities;
 	    associated_stas: Record<string, STAInfo>;
+	    channel_utilization: number;
+	    throughput: number;
+	    historical_channel_utilization: number[];
+	    historical_throughput: number[];
+	    AccumulatedNavMicroseconds: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new BSSInfo(source);
@@ -149,6 +166,11 @@ export namespace state_manager {
 	        this.vht_capabilities = this.convertValues(source["vht_capabilities"], VHTCapabilities);
 	        this.he_capabilities = this.convertValues(source["he_capabilities"], HECapabilities);
 	        this.associated_stas = this.convertValues(source["associated_stas"], STAInfo, true);
+	        this.channel_utilization = source["channel_utilization"];
+	        this.throughput = source["throughput"];
+	        this.historical_channel_utilization = source["historical_channel_utilization"];
+	        this.historical_throughput = source["historical_throughput"];
+	        this.AccumulatedNavMicroseconds = source["AccumulatedNavMicroseconds"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

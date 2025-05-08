@@ -4,8 +4,38 @@ This file tracks the project's progress using a task list format.
 
 2025-05-06 23:48:00 - Initial population.
 *
+*   [2025-05-08 16:46:00] - **TDD 任务调整与后端指标 "N/A" 问题诊断:**
+    *   根据用户反馈，暂停原定的为吞吐量和信道占空比新计算逻辑编写单元测试的计划。
+    *   当前TDD任务调整为：协助用户进行真实场景测试以诊断前端指标显示 "N/A" 的问题。
+    *   已分析代码 (`parser.go`, `manager.go`, `models.go`)，确认了新的计算逻辑（吞吐量基于TCP/UDP载荷，BSS信道占空比基于MAC Duration/ID）。
+    *   指出了STA信道占空比计算仍依赖旧的 `totalAirtime`，可能需要后续统一。
+    *   向用户提供了详细的日志添加建议（在 `parser.go` 和 `manager.go` 中），以追踪关键变量和计算步骤，帮助定位 "N/A" 问题的原因。
+    *   等待用户提供带有增强日志的程序输出来进行下一步分析。
+    *   已更新 `memory-bank/activeContext.md` 以反映此调试焦点。
 
+*   [2025-05-08 16:37:00] - **后端信道占空比计算重构:**
+    *   修改了帧解析器 ([`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0))、数据模型 ([`desktop_app/WifiPcapAnalyzer/state_manager/models.go`](desktop_app/WifiPcapAnalyzer/state_manager/models.go:0)) 和状态管理器 ([`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go:0))，以使用 802.11 MAC 头部的 `Duration/ID` 字段来计算信道占空比。
+    *   添加了对 PS-Poll 控制帧的特殊处理逻辑，以避免错误地将 AID 累加为 NAV 时间。
+    *   移除了旧的基于 `CalculateFrameAirtime` 的占空比计算逻辑。
+*   [2025-05-08 15:53:00] - **后端 "N/A" 问题调试与初步修复:**
+    *   定位到新功能指标（信道占空比、吞吐量）在前端显示 "N/A" 的主要原因是后端 `BSSInfo` 和 `STAInfo` 的 `lastCalcTime` 未初始化，导致首次指标计算结果为0。
+    *   已修复 [`desktop_app/WifiPcapAnalyzer/state_manager/models.go`](desktop_app/WifiPcapAnalyzer/state_manager/models.go:0) 中的 `NewBSSInfo` 和 `NewSTAInfo` 函数，正确初始化 `lastCalcTime`。
+    *   评估了当前指标计算方法的复杂度。
 ## Completed Tasks
+*   [2025-05-08 14:48:00] - **Wails前端新功能实现 (实时信道占空比与吞吐量分析):**
+    *   TypeScript类型 ([`desktop_app/WifiPcapAnalyzer/frontend/src/types/data.ts`](desktop_app/WifiPcapAnalyzer/frontend/src/types/data.ts:0)): `BSS` 和 `STA` 接口已扩展以包含新性能指标。
+    *   DataContext ([`desktop_app/WifiPcapAnalyzer/frontend/src/contexts/DataContext.tsx`](desktop_app/WifiPcapAnalyzer/frontend/src/contexts/DataContext.tsx:0)): 已更新以管理 `selectedPerformanceTarget`。
+    *   BSS列表 ([`desktop_app/WifiPcapAnalyzer/frontend/src/components/BssList/BssList.tsx`](desktop_app/WifiPcapAnalyzer/frontend/src/components/BssList/BssList.tsx:0)): 已修改以显示关键指标并更新选择。
+    *   STA列表 ([`desktop_app/WifiPcapAnalyzer/frontend/src/components/StaList/StaList.tsx`](desktop_app/WifiPcapAnalyzer/frontend/src/components/StaList/StaList.tsx:0)): 已修改以显示关键指标并更新选择。
+    *   PerformanceDetailPanel ([`desktop_app/WifiPcapAnalyzer/frontend/src/components/PerformanceDetailPanel/PerformanceDetailPanel.tsx`](desktop_app/WifiPcapAnalyzer/frontend/src/components/PerformanceDetailPanel/PerformanceDetailPanel.tsx:0)): 新建组件以使用 `recharts` 显示详细性能图表。
+    *   App布局 ([`desktop_app/WifiPcapAnalyzer/frontend/src/App.tsx`](desktop_app/WifiPcapAnalyzer/frontend/src/App.tsx:0), [`desktop_app/WifiPcapAnalyzer/frontend/src/App.css`](desktop_app/WifiPcapAnalyzer/frontend/src/App.css:0)): 已调整以集成新面板。
+    *   依赖安装: 已安装 `recharts` 和 `@types/recharts`。
+*   [2025-05-08 14:36:00] - **Wails后端新功能实现 (实时信道占空比与吞吐量):**
+    *   扩展了 [`desktop_app/WifiPcapAnalyzer/state_manager/models.go`](desktop_app/WifiPcapAnalyzer/state_manager/models.go:0) 中的 `BSSInfo` 和 `STAInfo` 数据结构以包含新指标字段。
+    *   在 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0) 中添加了 `CalculateFrameAirtime` 和 `getPHYRateMbps` 辅助函数（简化模型），并更新了 `ParsedFrameInfo`。
+    *   在 [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go:0) 中实现了指标累积 (`ProcessParsedFrame`) 和定期计算 (`PeriodicallyCalculateMetrics`) 逻辑。
+    *   更新了 [`desktop_app/WifiPcapAnalyzer/app.go`](desktop_app/WifiPcapAnalyzer/app.go:0) 的 `startup` 方法以初始化 `StateManager` 并启动指标计算的 goroutine。
+    *   确认了通过 `runtime.EventsEmit` 推送快照的逻辑无需修改即可包含新指标。
 *   [2025-05-08 13:04:00] - **Web前端UI细节调整 (根据用户反馈):**
     *   解决了控制面板折叠后，BSS 和 STA 列表未填充释放空间的问题 ([`desktop_app/WifiPcapAnalyzer/frontend/src/App.tsx`](desktop_app/WifiPcapAnalyzer/frontend/src/App.tsx:0))。
     *   确保了 BSS 条目展开后，Security 信息单独一行显示 ([`desktop_app/WifiPcapAnalyzer/frontend/src/components/BssList/BssList.tsx`](desktop_app/WifiPcapAnalyzer/frontend/src/components/BssList/BssList.tsx:0), [`desktop_app/WifiPcapAnalyzer/frontend/src/components/BssList/BssList.module.css`](desktop_app/WifiPcapAnalyzer/frontend/src/components/BssList/BssList.module.css:0))。
@@ -115,3 +145,23 @@ This file tracks the project's progress using a task list format.
 **Status:** Completed
 **Timestamp:** 2025/5/7 上午2:12:43
 **Details:** Documented detailed steps for cross-compiling the Go-based router_agent for a Linux aarch64 target, including environment variables, build commands, output verification, and transfer methods. Stored in `memory-bank/deployment/routerAgentDeployment.md`.
+*   [2025-05-08 16:51:29] - **后端日志增强完成:**
+    *   已在 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0) 和 [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go:0) 中添加了详细的 DEBUG 日志记录，用于追踪吞吐量和信道占空比计算的关键变量和中间值。
+    *   此举旨在帮助诊断前端指标显示 "N/A" 的问题。
+    *   Memory Bank (`activeContext.md`) 已同步更新此变更。
+* [2025-05-08 17:05:17] - **后端日志删减完成:**
+    *   已注释掉 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0) 和 [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go:0) 中为调试 "N/A" 问题添加的大量高频 DEBUG 日志。
+    *   修复了因注释日志导致的编译错误。
+    *   Memory Bank (`activeContext.md`, `progress.md`) 已更新。
+
+*   [2025-05-08 17:42:00] - **`gopacket` 解析错误诊断:**
+    *   分析了用户提供的 `gopacket` 解析错误日志。
+    *   评估了这些错误对信道占空比 (`Duration/ID`) 和吞吐量 (`TransportPayloadLength`) 计算的直接影响。
+    *   提出了问题原因的假设，包括数据包本身问题、`gopacket` 限制/Bug 以及当前解析逻辑问题。
+    *   建议了后续步骤，包括增强错误处理、使用 Wireshark 分析 pcap 文件、审查 `gopacket` 用法及关注 Radiotap 解析。
+    *   更新了 [`memory-bank/activeContext.md`](memory-bank/activeContext.md:0) 以反映分析结果。
+*   [2025-05-08 17:46:00] - **后端解析器鲁棒性增强完成:**
+    *   修改了 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0) 以增强 `gopacket` 解析错误的错误处理。
+    *   当 `packet.ErrorLayer()` 返回错误或 `Dot11` 层无法解析时，现在会返回错误，阻止这些数据包被进一步处理。
+    *   `gopacket.NewPacket` 调用已更改为使用 `gopacket.Lazy` 解码选项。
+    *   此更改旨在提高解析器在遇到损坏或异常数据包时的健壮性，并减少因解析失败导致的下游指标计算问题。

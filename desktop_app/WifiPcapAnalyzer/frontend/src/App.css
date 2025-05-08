@@ -28,7 +28,8 @@
 
 /* General container styling for sections within App-main */
 .bss-list-container,
-.sta-list-container-wrapper { /* ControlPanel container styling removed from here */
+.sta-list-container-wrapper,
+.performance-detail-panel-container { /* Added performance panel */
   background-color: var(--color-misty-white);
   padding: calc(var(--spacing-unit) * 1.5);
   border-radius: var(--border-radius-base);
@@ -59,8 +60,12 @@
   grid-column: 2 / 3;
 }
 
-.sta-list-container-wrapper { /* Assuming .main-content-area in App.tsx is for StaList */
+.sta-list-container-wrapper {
   grid-column: 3 / 4;
+}
+
+.performance-detail-panel-container {
+  grid-column: 4 / 5; /* New column for performance panel */
 }
 
 
@@ -75,11 +80,24 @@
 }
 
 /* Responsive adjustments for smaller screens */
+@media (max-width: 1200px) { /* Adjusted breakpoint for 4 columns */
+  .App-main {
+    /* Stack performance panel below BSS/STA */
+    grid-template-columns: auto 1fr 1.5fr; /* CP, BSS, STA */
+    grid-template-rows: auto auto; /* Row for CP/BSS/STA, Row for Perf Panel */
+  }
+  .performance-detail-panel-container {
+    grid-column: 1 / -1; /* Span all columns */
+    grid-row: 2 / 3;
+    margin-top: calc(var(--spacing-unit) * 2);
+  }
+}
+
 @media (max-width: 900px) { /* Lowered breakpoint further */
   .App-main {
-    /* Stack BSS and STA list */
-    grid-template-columns: auto 1fr; /* Control Panel and combined BSS/STA */
-    grid-template-rows: auto; /* Let content define row height */
+    /* Stack BSS and STA list, and performance panel */
+    grid-template-columns: auto 1fr; /* Control Panel and combined BSS/STA/Perf */
+    grid-template-rows: auto auto auto; /* CP, BSS, STA, Perf */
   }
   .control-panel-container {
      /* Reset width/min-width overrides from larger screens */
@@ -101,6 +119,11 @@
   .sta-list-container-wrapper {
     grid-column: 2 / 3;
     grid-row: 2 / 3; /* STA list below */
+    margin-bottom: calc(var(--spacing-unit) * 2);
+  }
+  .performance-detail-panel-container {
+    grid-column: 2 / 3; /* Align with BSS/STA */
+    grid-row: 3 / 4;
   }
 }
 
@@ -108,11 +131,14 @@
 @media (max-width: 768px) { /* Further stacking for smaller screens */
   .App-main {
     grid-template-columns: 1fr; /* Stack all sections vertically */
+    grid-template-rows: auto; /* Let content define row height */
   }
    .control-panel-container,
   .bss-list-container,
-  .sta-list-container-wrapper {
+  .sta-list-container-wrapper,
+  .performance-detail-panel-container {
     grid-column: 1 / -1; /* Each takes full width */
+    grid-row: auto; /* Auto place in sequence */
     margin-bottom: calc(var(--spacing-unit) * 2);
     height: auto; /* Adjust height for stacked layout */
     min-height: 200px; /* Ensure some visibility */

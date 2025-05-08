@@ -13,6 +13,7 @@ interface AppState {
   selectedBssidForStaList: string | null; // State for selected BSSID for STA list
   isCapturing: boolean; // New state for capture status
   isPanelCollapsed: boolean; // New state for panel collapse
+  selectedPerformanceTarget: { type: 'bss'; id: string } | { type: 'sta'; id: string } | null; // For PerformanceDetailPanel
 }
 
 type Action =
@@ -23,7 +24,8 @@ type Action =
   | { type: 'REMOVE_BSS'; payload: string }
   | { type: 'SET_SELECTED_BSSID_FOR_STA_LIST'; payload: string | null }
   | { type: 'SET_IS_CAPTURING'; payload: boolean } // New action for capture status
-  | { type: 'SET_PANEL_COLLAPSED'; payload: boolean }; // New action for panel collapse
+  | { type: 'SET_PANEL_COLLAPSED'; payload: boolean } // New action for panel collapse
+  | { type: 'SET_SELECTED_PERFORMANCE_TARGET'; payload: { type: 'bss'; id: string } | { type: 'sta'; id: string } | null }; // For PerformanceDetailPanel
 
 const initialState: AppState = {
   bssList: [],
@@ -33,6 +35,7 @@ const initialState: AppState = {
   selectedBssidForStaList: null,
   isCapturing: false, // Initialize capture status
   isPanelCollapsed: false, // Default to not collapsed
+  selectedPerformanceTarget: null, // Initialize selected performance target
 };
 
 const AppStateContext = createContext<AppState | undefined>(undefined);
@@ -116,6 +119,11 @@ const appReducer = (state: AppState, action: Action): AppState => {
       return {
         ...state,
         isPanelCollapsed: action.payload,
+      };
+    case 'SET_SELECTED_PERFORMANCE_TARGET':
+      return {
+        ...state,
+        selectedPerformanceTarget: action.payload,
       };
     default:
       return state;

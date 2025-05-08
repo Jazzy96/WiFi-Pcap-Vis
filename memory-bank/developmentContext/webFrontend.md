@@ -24,6 +24,9 @@ The Web Frontend is responsible for:
     *   **Global Styles:** Standard CSS files (`src/index.css`, `src/App.css`) for global definitions, CSS variables, and base layout.
     *   **CSS Variables:** Extensively used for theming, color palette, typography, and consistent spacing, defined primarily in `src/index.css`.
 *   **UI Components:** Custom-built React components, with a focus on creating a library of common/atomic components.
+*   **Charting Library:** Recharts
+    *   Selected for its good React integration, rich chart types, and customization options.
+    *   Used in `PerformanceDetailPanel.tsx` for displaying historical performance data.
 
 ## 3. Project Structure (within `desktop_app/WifiPcapAnalyzer/frontend/`)
 
