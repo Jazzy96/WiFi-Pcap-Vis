@@ -7,8 +7,7 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/google/gopacket/layers" // Import for layers.Dot11Type constants
+	// Import for layers.Dot11Type constants
 )
 
 // StateManager holds the current state of all observed BSSs and STAs.
@@ -46,6 +45,9 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 	if parsedInfo == nil {
 		return
 	}
+	log.Printf("DEBUG_SM_PROCESS_FRAME_INPUT: Processing ParsedFrameInfo: BSSID=%s, SA=%s, DA=%s, SSID=%s, Type=%s, Signal=%d",
+		parsedInfo.BSSID, parsedInfo.SA, parsedInfo.DA, parsedInfo.SSID, parsedInfo.FrameType, parsedInfo.SignalStrength)
+
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 
@@ -56,7 +58,8 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 	// Calculate data length for metrics (airtime calculation is removed)
 	// frameAirtime := frame_parser.CalculateFrameAirtime(parsedInfo.FrameLength, parsedInfo.PHYRateMbps, parsedInfo.IsShortPreamble, parsedInfo.IsShortGI)
 	frameDataLength := 0
-	if parsedInfo.FrameType.MainType() == layers.Dot11TypeData {
+	// Check WlanFcType for Data type (2)
+	if parsedInfo.WlanFcType == 2 { // 2 corresponds to Dot11TypeData
 		if parsedInfo.TransportPayloadLength > 0 {
 			frameDataLength = parsedInfo.TransportPayloadLength
 		} else {
@@ -82,6 +85,7 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 				sta.SignalStrength = parsedInfo.SignalStrength
 			}
 			// Update capabilities if needed (logic omitted for brevity, similar to below)
+			log.Printf("DEBUG_SM_UPDATE: STA %s updated. LastSeen: %v, Signal: %d", macStr, time.UnixMilli(sta.LastSeen), sta.SignalStrength)
 		} else {
 			// STA not confirmed, check pending list
 			firstSeenTime, pendingExists := sm.pendingSTAInfos[macStr]
@@ -89,7 +93,7 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 				// Exists in pending list, check time window
 				if now.Sub(firstSeenTime) < confirmationWindow {
 					// Seen again within the window, confirm it!
-					// log.Printf("DEBUG_STATE_MANAGER: Confirming STA %s (seen again within %v)", macStr, confirmationWindow)
+					log.Printf("DEBUG_SM_UPDATE: Confirming STA %s (seen again within %v)", macStr, confirmationWindow)
 					delete(sm.pendingSTAInfos, macStr) // Remove from pending
 					sta = NewSTAInfo(macStr)           // Create new STA
 					sta.LastSeen = nowMilli
@@ -116,14 +120,15 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 						sta.VHTCapabilities.ChannelWidth80Plus80MHz = (parsedInfo.ParsedVHTCaps.SupportedChannelWidthSet == 3)
 					}
 					sm.staInfos[macStr] = sta // Add to confirmed list
+					log.Printf("DEBUG_SM_UPDATE: STA %s created/confirmed. Associated BSSID: %s, Signal: %d", sta.MACAddress, sta.AssociatedBSSID, sta.SignalStrength)
 				} else {
 					// Seen again, but outside the window. Reset the timer.
-					// log.Printf("DEBUG_STATE_MANAGER: Re-pending STA %s (seen again after %v)", macStr, now.Sub(firstSeenTime))
+					log.Printf("DEBUG_SM_UPDATE: Re-pending STA %s (seen again after %v)", macStr, now.Sub(firstSeenTime))
 					sm.pendingSTAInfos[macStr] = now // Update timestamp
 				}
 			} else {
 				// First time seeing this STA, add to pending list
-				// log.Printf("DEBUG_STATE_MANAGER: Pending STA %s (first seen)", macStr)
+				log.Printf("DEBUG_SM_UPDATE: Pending STA %s (first seen)", macStr)
 				sm.pendingSTAInfos[macStr] = now
 			}
 		}
@@ -259,8 +264,11 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 	// --- End Original STA logic ---
 
 	// --- BSS Processing ---
-	if parsedInfo.FrameType.MainType() == layers.Dot11TypeMgmt {
+	// Check WlanFcType for Management type (0)
+	log.Printf("DEBUG_SM_BSS_CHECK_TYPE: Frame BSSID: %s, SA: %s, DA: %s, FrameType: %s, WlanFcType: %d", parsedInfo.BSSID, parsedInfo.SA, parsedInfo.DA, parsedInfo.FrameType, parsedInfo.WlanFcType)
+	if parsedInfo.WlanFcType == 0 { // 0 corresponds to Dot11TypeMgmt
 		bssidMAC := parsedInfo.BSSID
+		log.Printf("DEBUG_SM_BSS_CHECK_MAC: Frame BSSID: %s, bssidMAC: %v, isUnicast: %t", parsedInfo.BSSID, bssidMAC, isUnicastMAC(bssidMAC))
 		if bssidMAC != nil && isUnicastMAC(bssidMAC) { // Ensure BSSID is valid and unicast
 			bssidStr := bssidMAC.String()
 
@@ -273,7 +281,9 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 			bss, bssExists := sm.bssInfos[bssidStr]
 
 			// --- BSS Creation/Update Logic with Confirmation ---
-			isBeaconOrProbeResp := parsedInfo.FrameType == layers.Dot11TypeMgmtBeacon || parsedInfo.FrameType == layers.Dot11TypeMgmtProbeResp
+			// Compare with string representations or WlanFcSubtype for specific Mgmt frames
+			isBeaconOrProbeResp := parsedInfo.FrameType == "MgmtBeacon" || parsedInfo.FrameType == "MgmtProbeResp"
+			log.Printf("DEBUG_SM_BSS_CHECK_BEACON_PROBE: Frame BSSID: %s, FrameType: %s, isBeaconOrProbeResp: %t", parsedInfo.BSSID, parsedInfo.FrameType, isBeaconOrProbeResp)
 
 			if bssExists {
 				// BSS already confirmed, update LastSeen and details if Beacon/ProbeResp
@@ -335,6 +345,8 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 						}
 					}
 				}
+				log.Printf("DEBUG_SM_UPDATE: BSS %s updated. LastSeen: %v, SSID: %s, Signal: %d", bssidStr, time.UnixMilli(bss.LastSeen), bss.SSID, bss.SignalStrength)
+				log.Printf("DEBUG_SM_BSS_UPDATE: BSS %s created/updated. SSID: '%s', Channel: %d, Signal: %d, LastSeen: %v", bss.BSSID, bss.SSID, bss.Channel, bss.SignalStrength, time.UnixMilli(bss.LastSeen))
 			} else {
 				// BSS not confirmed, check pending list (only for Beacon/ProbeResp)
 				if isBeaconOrProbeResp {
@@ -343,18 +355,21 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 						// Exists in pending, check time window
 						if now.Sub(firstSeenTime) < confirmationWindow {
 							// Seen again within window, try to confirm
-							// log.Printf("DEBUG_STATE_MANAGER: Confirming BSS %s (seen again within %v)", bssidStr, confirmationWindow)
+							log.Printf("DEBUG_SM_UPDATE: Confirming BSS %s (seen again within %v)", bssidStr, confirmationWindow)
 							delete(sm.pendingBSSInfos, bssidStr) // Remove from pending
 
 							// --- Apply RSSI and Completeness Filters before confirming ---
 							minRSSI := config.GlobalConfig.MinBSSCreationRSSI
+							log.Printf("DEBUG_SM_BSS_FILTER_RSSI: BSSID: %s, Signal: %d, MinRSSI: %d, Pass: %t", bssidStr, parsedInfo.SignalStrength, minRSSI, parsedInfo.SignalStrength >= minRSSI)
 							if parsedInfo.SignalStrength < minRSSI {
 								// log.Printf("DEBUG_STATE_MANAGER: Confirmation failed for BSS %s. Signal %d dBm < threshold %d dBm.", bssidStr, parsedInfo.SignalStrength, minRSSI)
 							} else {
 								isSsidMissing := (parsedInfo.SSID == "" || parsedInfo.SSID == "[N/A]" || parsedInfo.SSID == "<Hidden SSID>" || parsedInfo.SSID == "<Invalid SSID Encoding>")
 								isSecurityMissing := len(parsedInfo.RSNRaw) == 0
 								areCapsMissing := parsedInfo.ParsedHTCaps == nil && parsedInfo.ParsedVHTCaps == nil
-								if isSsidMissing && isSecurityMissing && areCapsMissing {
+								passCompleteness := !(isSsidMissing && isSecurityMissing && areCapsMissing)
+								log.Printf("DEBUG_SM_BSS_FILTER_COMPLETE: BSSID: %s, SSIDMissing: %t, SecurityMissing: %t, CapsMissing: %t, Pass: %t", bssidStr, isSsidMissing, isSecurityMissing, areCapsMissing, passCompleteness)
+								if !passCompleteness {
 									log.Printf("WARN_STATE_MANAGER: Confirmation failed for BSS %s due to severely incomplete info.", bssidStr)
 								} else {
 									// Passed filters, create and add to confirmed list
@@ -414,17 +429,19 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 										}
 									}
 									sm.bssInfos[bssidStr] = bss // Add to confirmed map
-									// log.Printf("DEBUG_STATE_MANAGER: Confirmed and created new BSS %s", bssidStr)
+									log.Printf("DEBUG_SM_UPDATE: BSS %s created/confirmed. SSID: %s, Channel: %d, Signal: %d", bss.BSSID, bss.SSID, bss.Channel, bss.SignalStrength)
+									log.Printf("DEBUG_SM_BSS_UPDATE: BSS %s created/updated. SSID: '%s', Channel: %d, Signal: %d, LastSeen: %v", bss.BSSID, bss.SSID, bss.Channel, bss.SignalStrength, time.UnixMilli(bss.LastSeen))
+									// log.Printf("DEBUG_SM_BSS_UPDATE: BSS %s created/updated. SSID: %s, Channel: %d, Signal: %d", bss.BSSID, bss.SSID, bss.Channel, bss.SignalStrength) // Original log, will be replaced by the more detailed one below
 								}
 							}
 						} else {
 							// Seen again, but outside window. Reset timer.
-							// log.Printf("DEBUG_STATE_MANAGER: Re-pending BSS %s (seen again after %v)", bssidStr, now.Sub(firstSeenTime))
+							log.Printf("DEBUG_SM_UPDATE: Re-pending BSS %s (seen again after %v)", bssidStr, now.Sub(firstSeenTime))
 							sm.pendingBSSInfos[bssidStr] = now // Update timestamp
 						}
 					} else {
 						// First time seeing this BSS, add to pending list
-						// log.Printf("DEBUG_STATE_MANAGER: Pending BSS %s (first seen)", bssidStr)
+						log.Printf("DEBUG_SM_UPDATE: Pending BSS %s (first seen)", bssidStr)
 						sm.pendingBSSInfos[bssidStr] = now
 					}
 				}
@@ -435,22 +452,22 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 			bss, bssExists = sm.bssInfos[bssidStr] // Check confirmed list now
 
 			if bssExists { // Proceed with association logic only if BSS is confirmed
-				switch parsedInfo.FrameType {
-				case layers.Dot11TypeMgmtAssociationReq, layers.Dot11TypeMgmtReassociationReq:
+				switch parsedInfo.FrameType { // Compare with string representations
+				case "MgmtAssocReq", "MgmtReassocReq":
 					staMAC := parsedInfo.SA.String()
 					// Associate only if STA is also confirmed
 					if sta, staExists := sm.staInfos[staMAC]; staExists {
 						sta.AssociatedBSSID = bssidStr
 						bss.AssociatedSTAs[staMAC] = sta
 					}
-				case layers.Dot11TypeMgmtAssociationResp, layers.Dot11TypeMgmtReassociationResp:
+				case "MgmtAssocResp", "MgmtReassocResp":
 					staMAC := parsedInfo.DA.String()
 					// Associate only if STA is also confirmed
 					if sta, staExists := sm.staInfos[staMAC]; staExists {
 						sta.AssociatedBSSID = bssidStr // BSSID is the SA in Resp frames
 						bss.AssociatedSTAs[staMAC] = sta
 					}
-				case layers.Dot11TypeMgmtDisassociation, layers.Dot11TypeMgmtDeauthentication:
+				case "MgmtDisassoc", "MgmtDeauth":
 					if parsedInfo.SA != nil && parsedInfo.DA != nil {
 						saStr := parsedInfo.SA.String()
 						daStr := parsedInfo.DA.String()
@@ -474,7 +491,7 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 	} // End if Mgmt frame
 
 	// --- Data Frame Association Logic (needs confirmed BSS/STA) ---
-	if parsedInfo.FrameType.MainType() == layers.Dot11TypeData {
+	if parsedInfo.WlanFcType == 2 { // 2 corresponds to Dot11TypeData
 		staMAC := ""
 		apMAC := ""
 
@@ -632,13 +649,10 @@ func (sm *StateManager) ProcessParsedFrame(parsedInfo *frame_parser.ParsedFrameI
 			// Accumulate MACDurationID
 			// Check if the frame is a Control frame and PS-Poll subtype
 			isCtrlPSPoll := false
-			if parsedInfo.Dot11Layer != nil {
-				// Directly compare the full type with the Powersave-Poll constant
-				// The constant name is Dot11TypeCtrlPowersavePoll
-				if parsedInfo.Dot11Layer.Type == layers.Dot11TypeCtrlPowersavePoll {
-					isCtrlPSPoll = true
-					// log.Printf("DEBUG_NAV_SKIP: Skipping NAV accumulation for PS-Poll frame. BSSID: %s, SA: %s, DurationID: %d", bssidStr, parsedInfo.SA, parsedInfo.MACDurationID)
-				}
+			// Check WlanFcType for Control (1) and WlanFcSubtype for PS-Poll (10)
+			if parsedInfo.WlanFcType == 1 && parsedInfo.WlanFcSubtype == 10 { // 10 corresponds to SubtypeCtrlPSPoll
+				isCtrlPSPoll = true
+				// log.Printf("DEBUG_NAV_SKIP: Skipping NAV accumulation for PS-Poll frame. BSSID: %s, SA: %s, DurationID: %d", bssidStr, parsedInfo.SA, parsedInfo.MACDurationID)
 			}
 
 			if !isCtrlPSPoll {
@@ -885,7 +899,7 @@ func (sm *StateManager) GetSnapshot() Snapshot {
 		// log.Printf("DEBUG_SNAPSHOT_STA: STA: %s, AssociatedBSSID: %s, CU: %.2f, UL: %d, DL: %d",
 		// 	staCopy.MACAddress, staCopy.AssociatedBSSID, staCopy.ChannelUtilization, staCopy.UplinkThroughput, staCopy.DownlinkThroughput)
 	}
-	// log.Printf("DEBUG_SNAPSHOT_SUMMARY: Created snapshot with %d BSSs and %d STAs.", len(bssList), len(staList))
+	log.Printf("DEBUG_SM_EVENT_EMIT: Preparing state snapshot. BSS count: %d, STA count: %d", len(bssList), len(staList))
 	return Snapshot{BSSs: bssList, STAs: staList}
 }
 

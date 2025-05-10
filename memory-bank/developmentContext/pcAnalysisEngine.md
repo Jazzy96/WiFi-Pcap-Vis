@@ -212,3 +212,127 @@ With this change, the IE parsing logic will operate on the correct byte slice (s
     *   Ensuring that a valid Dot11 layer, which is essential for most of the analysis, is present.
     *   Leveraging `gopacket.Lazy` to potentially bypass issues in non-critical or malformed layers that might otherwise halt decoding with `gopacket.Default`.
 *   **Expected Outcome:** A reduction in unhandled parsing errors, leading to more reliable data extraction for metric calculations and fewer "N/A" displays on the frontend. Packets that are truly unparseable at the Dot11 level will be cleanly skipped.
+## `tshark` 解析引擎替换 `gopacket` (2025-05-10)
+
+**目标:** 将 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0) 中基于 `gopacket` 的 802.11 帧解析逻辑，替换为通过执行 `tshark -T fields` 命令并解析其 CSV 输出来获取帧信息。
+
+**动机:**
+*   `gopacket` 在处理某些损坏或非标准帧时可能遇到困难。
+*   `tshark` 拥有更成熟和鲁棒的解析引擎。
+*   `tshark -T fields` 可以精确指定所需字段，减少不必要的数据处理。
+
+**核心架构组件:**
+
+1.  **`TSharkExecutor` 模块/结构体:**
+    *   **职责:** 管理 `tshark` 子进程的启动、停止和输出流的读取。
+    *   **主要方法:**
+        *   `Start(pcapFilePath string, tsharkPath string, fields []string) (io.ReadCloser, error)`: 启动 `tshark` 进程，配置必要的参数（如 `-r <pcap_file_path>`, `-T fields`, `-E header=y`, `-E separator=,`, `-E quote=d`, `-E occurrence=a` 以及所有必要的 `-e <field>` 参数），并返回其标准输出的 `io.ReadCloser`。
+        *   `Stop()`: 终止 `tshark` 进程。
+    *   **错误处理:** 监控 `tshark` 的 `stderr`，处理启动失败、运行时错误。
+
+2.  **`CSVParser` 模块/结构体:**
+    *   **职责:** 解析从 `TSharkExecutor` 获取的 `tshark` 输出 CSV 流。
+    *   **主要方法:**
+        *   `NewCSVParser(reader io.Reader) (*CSVParser, error)`: 初始化解析器。读取并解析 CSV 头部行，创建一个从字段名到其在 CSV 行中索引的映射。
+        *   `ReadFrame() (map[string]string, error)`: 读取并解析 CSV 数据的一行，将其转换为一个从字段名到其字符串值的映射。处理行尾 (EOF) 和 CSV 解析错误。
+    *   **依赖:** Go 标准库 `encoding/csv`。
+
+3.  **`FrameProcessor` 模块/结构体:**
+    *   **职责:** 将从 `CSVParser` 获取的原始字段名到值的映射，转换为结构化的 `ParsedFrameInfo` 对象。
+    *   **主要方法:**
+        *   `ProcessRow(row map[string]string) (*ParsedFrameInfo, error)`:
+            *   使用辅助函数 (例如 `getString(row, fieldName)`, `getInt(row, fieldName)`, `getMac(row, fieldName)`, `getFloatEpochTime(row, fieldName)`) 从 `row` 中安全地提取和转换每个必要的字段值。这些辅助函数应能处理字段缺失和类型转换错误。
+            *   根据需要解析 `wlan.fc.type_subtype` (十六进制) 为整数的 `FrameType` 和 `FrameSubType`。
+            *   调用 `PhyRateCalculator` 来计算 PHY 速率，使用从 `row` 中提取的相关 Radiotap 字段。
+            *   计算帧的物理传输时间（用于占空比）。
+            *   填充 `ParsedFrameInfo` 结构体的所有相关字段。
+    *   **错误处理:** 记录字段缺失、类型转换失败等问题。
+
+4.  **`PhyRateCalculator` 类/结构体:**
+    *   **职责:** (复用或调整现有逻辑) 根据从 `tshark` 输出中提取的 Radiotap MCS/VHT/HE 字段计算物理层速率。
+    *   **主要方法:** `CalculatePhyRate(fields map[string]string) float64`。
+    *   **逻辑:** 优先顺序为 HE -> VHT -> HT -> Legacy。如果 `tshark` 直接提供了 `radiotap.datarate` 并且其他更精确的 MCS 字段不可用，则可将其用作回退。
+
+**主处理流程 (重写 `ProcessPcapStream` 或创建新函数在 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0)):**
+
+1.  **初始化:**
+    *   创建 `TSharkExecutor` 实例。
+    *   从配置中获取 `tshark` 可执行文件路径和 pcap 文件路径。
+    *   定义需要从 `tshark` 提取的完整字段列表 (基于规范)。
+2.  **启动 `tshark`:**
+    *   调用 `TSharkExecutor.Start(pcapFilePath, tsharkPath, fields)` 启动 `tshark` 进程，获取其标准输出流 (`stdoutReader`)。
+    *   如果启动失败，记录错误并退出。
+3.  **设置 CSV 解析:**
+    *   创建 `CSVParser` 实例，传入 `stdoutReader`。
+    *   如果头部解析失败，记录错误并退出。
+4.  **帧处理循环:**
+    *   创建 `FrameProcessor` 实例。
+    *   循环:
+        *   调用 `CSVParser.ReadFrame()` 获取下一行解析为 `map[string]string`。
+        *   如果遇到 EOF 或不可恢复的 CSV 错误，则退出循环。
+        *   调用 `FrameProcessor.ProcessRow(row)` 将原始数据转换为 `ParsedFrameInfo`。
+        *   如果 `ProcessRow` 成功:
+            *   将生成的 `ParsedFrameInfo` 对象传递给 `PacketInfoHandler` 回调 (供 `StateManager` 使用)。
+        *   如果 `ProcessRow` 失败:
+            *   记录详细错误信息（包括原始 CSV 行、错误详情、时间戳等）。
+            *   继续处理下一行。
+5.  **清理:**
+    *   当循环结束或发生致命错误时，调用 `TSharkExecutor.Stop()` 来确保 `tshark` 进程被正确终止。
+    *   关闭相关流。
+
+**数据结构 (`ParsedFrameInfo`):**
+
+*   现有 `ParsedFrameInfo` 结构体将保持，并根据需要进行最小调整，以确保所有从 `tshark` 解析的字段都能被正确存储或用于计算派生值。
+*   例如，`WlanFcType` 和 `WlanFcSubtype` 将从解析 `wlan.fc.type_subtype` (十六进制字符串) 中获得。
+*   确保有字段来存储计算出的 PHY 速率和帧通话时间。
+
+**日志记录要求 (基于规范):**
+
+*   **启动/关闭:** `tshark` 进程的启动命令、成功/失败状态、正常/异常退出。
+*   **行解析失败:** 记录原始 CSV 行、错误信息、问题字段（如果可识别）、帧时间戳（如果可解析）。
+*   **字段缺失:** 记录关键字段在 CSV 行中缺失的警告。
+*   **无效值:** 记录字段值无法按预期类型解析的错误。
+*   **摘要统计:** 定期记录已处理的总帧数、成功解析的帧数、失败解析的帧数。
+
+**与现有代码的集成点:**
+
+*   **[`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0):**
+    *   `ProcessPcapStream` 函数将被重写以实现上述新的基于 `tshark` 的主处理流程。它将不再使用 `gopacket/pcapgo`。
+    *   现有的 `parsePacketLayers` 函数将被 `FrameProcessor.ProcessRow` 的逻辑所取代。
+    *   `getPHYRateMbps` (或其核心逻辑) 将被封装在 `PhyRateCalculator` 中。
+    *   `CalculateFrameAirtime` 的逻辑将保留，但其输入参数（PHY 速率、帧长度）将从 `tshark` 解析出的数据中获取。
+*   **[`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go:0):**
+    *   `PacketInfoHandler` 回调接口 (`func(info *ParsedFrameInfo)`) 保持不变。`StateManager` 将继续通过此回调接收 `ParsedFrameInfo` 对象。
+*   **配置 ([`desktop_app/WifiPcapAnalyzer/config/config.go`](desktop_app/WifiPcapAnalyzer/config/config.go:0), [`desktop_app/WifiPcapAnalyzer/config/config.json`](desktop_app/WifiPcapAnalyzer/config/config.json:0)):**
+    *   应添加一个配置项来指定 `tshark` 可执行文件的路径，例如 `TsharkPath`。
+
+**潜在风险和缓解措施 (基于规范):**
+
+*   **`tshark` 性能:** 通过精确指定字段列表来最小化 `tshark` 的处理负担。流式处理 CSV 输出避免一次性加载所有数据。
+*   **`tshark` 版本兼容性/字段名变更:** 在文档中记录所依赖的 `tshark` 版本。考虑使字段名列表可配置，以适应未来 `tshark` 的变化。
+*   **CSV 解析复杂性:** 使用 Go 标准库 `encoding/csv`，它是一个成熟且经过良好测试的库。对多值字段（通过 `occurrence=a` 获取）的解析需要在 `FrameProcessor` 中特别处理。
+*   **`tshark` 错误处理:** `TSharkExecutor` 必须监控 `tshark` 的 `stderr` 输出，并实现超时和可能的重试逻辑（如果适用）。
+
+**Mermaid 图 (高级流程):**
+```mermaid
+graph TD
+    A[Pcap File] --> B{TSharkExecutor};
+    B -- Stdout (CSV Stream) --> C{CSVParser};
+    C -- Parsed CSV Row (map[string]string) --> D{FrameProcessor};
+    D -- ParsedFrameInfo --> E[PacketInfoHandler (StateManager)];
+    F[PhyRateCalculator] <--> D;
+    B -- Stderr --> G[Logging];
+    C -- Errors --> G;
+    D -- Errors --> G;
+
+    subgraph Frame Parser Module (`parser.go`)
+        B
+        C
+        D
+        F
+    end
+```
+
+**时间戳:** 2025-05-10
+
+---

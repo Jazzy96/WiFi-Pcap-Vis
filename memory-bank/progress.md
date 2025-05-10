@@ -1,3 +1,32 @@
+*   [2025-05-10 17:58:19] - **调试UI无数据显示 (添加日志):** 在 [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go) 和 [`desktop_app/WifiPcapAnalyzer/app.go`](desktop_app/WifiPcapAnalyzer/app.go) 中添加了详细日志，以追踪BSS更新和状态快照事件的发送。等待用户提供新的日志进行分析。
+*   [2025-05-10 17:19:00] - **调试前端无数据显示问题 (解析器增强):**
+    *   修改了 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) 中的 `ProcessRow` 函数，以更宽松地处理某些非关键字段（如 `radiotap.channel.freq`, `radiotap.dbm_antsignal`, `wlan.duration`）的解析错误。如果这些字段的值存在但无法解析，将记录错误但不会导致整个帧被丢弃。
+    *   `frame.time_epoch` 解析失败时的回退值从 `time.Now()` 改为 `time.Time{}` (零值)，但此字段的解析失败仍会使帧被丢弃。
+    *   目标是提高成功解析并传递到状态管理器的帧数量，以解决前端无数据显示的问题。
+    *   Memory Bank (`decisionLog.md`, `activeContext.md`) 已更新。
+*   [2025-05-10 16:35:18] - **调试CSV数据行解析:**
+    *   在 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) 的 `ProcessRow` 函数以及调用 `packetInfoHandler` 的地方添加了详细的 DEBUG 日志。
+    *   日志包括：原始CSV行、字段解析尝试、解析错误、成功解析的帧摘要。
+    *   修复了因使用 `log.Errorf` 导致的编译错误（改为 `log.Printf`）。
+    *   目的是定位在 `tshark` 成功执行后，CSV 数据行解析或后续处理中发生的错误。
+    *   Memory Bank (`decisionLog.md`, `activeContext.md`) 已更新。
+*   [2025-05-10 16:17:00] - **调试 `tshark` 字段问题:**
+    *   根据错误日志和 `tshark_beacon_example.json` 修正了 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) 中的 `defaultTsharkFields` 列表。
+    *   更正了 `wlan.flags.retry` 为 `wlan.fc.retry`。
+    *   移除了多个导致错误的 `radiotap.*` 和 `wlan.he.*` 字段。
+    *   目标是使 `tshark` 命令能够成功执行。
+    *   Memory Bank (`decisionLog.md`, `activeContext.md`) 已更新。
+# Progress
+
+*   [2025-05-10 15:30:00] - **核心解析逻辑迁移 (gopacket -&gt; tshark):**
+    *   在 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) 中实现了基于 `tshark` 的新解析逻辑，包括 `TSharkExecutor`, `CSVParser`, `FrameProcessor`。
+    *   更新了 [`desktop_app/WifiPcapAnalyzer/config/config.go`](desktop_app/WifiPcapAnalyzer/config/config.go) 和 [`desktop_app/WifiPcapAnalyzer/config/config.json`](desktop_app/WifiPcapAnalyzer/config/config.json) 以支持 `tshark_path` 配置。
+    *   修复了 [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go) 和 [`desktop_app/WifiPcapAnalyzer/app.go`](desktop_app/WifiPcapAnalyzer/app.go) 中的相关编译错误。
+    *   删除了旧的 `gopacket` 测试文件 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser_test.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser_test.go)。
+    *   此变更旨在提高解析的鲁棒性和准确性。
+
+---
+(Existing content will follow this new entry)
 # Progress
 
 This file tracks the project's progress using a task list format.

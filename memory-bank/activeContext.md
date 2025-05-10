@@ -1,3 +1,38 @@
+*   [2025-05-10 17:57:54] - **Debug Status Update (UI Display Issue):** Added detailed logging to [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go) and [`desktop_app/WifiPcapAnalyzer/app.go`](desktop_app/WifiPcapAnalyzer/app.go) to investigate missing BSS updates and state snapshot event emissions, which are suspected causes for the UI not displaying BSS/STA information. Log `DEBUG_SM_BSS_UPDATE` added to BSS creation/update paths. Logs `DEBUG_APP_EVENT: Attempting to get snapshot and emit event.` and `DEBUG_APP_EVENT: Snapshot created. BSS count: %d, STA count: %d. Emitting event now.` added around snapshot generation and emission.
+*   [2025-05-10 17:19:00] - **Debug Status Update (Parser Robustness):**
+    *   Modified [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) to improve tolerance for empty or malformed non-critical CSV fields from `tshark`.
+    *   Specifically, parsing errors for `radiotap.channel.freq`, `radiotap.dbm_antsignal`, and `wlan.duration`, if the raw value was present but unparsable, will now be logged but will not cause the entire frame to be discarded. These fields will use their default zero-values in `ParsedFrameInfo`.
+    *   The fallback for a failed `frame.time_epoch` parse was changed from `time.Now()` to `time.Time{}` (zero value), though a failure here still discards the frame.
+    *   This aims to increase the number of frames successfully processed and sent to the state manager, addressing the issue of no data appearing on the frontend.
+    *   Memory Bank: `decisionLog.md` and `progress.md` updated.
+* [2025-05-10 16:35:04] - **Debug Status Update (CSV Data Parsing):**
+    *   Added detailed logging to `ProcessRow` in [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) to trace CSV row data, individual field parsing attempts/values, errors during extraction/conversion, and successfully parsed `ParsedFrameInfo` summaries.
+    *   Also added logs before calling `packetInfoHandler` in `ProcessPcapFile` and `ProcessPcapStream`.
+    *   Corrected `log.Errorf` to `log.Printf` to resolve compilation errors.
+    *   This aims to help pinpoint errors occurring during the data row parsing stage.
+    *   Memory Bank: `decisionLog.md` and `progress.md` updated.
+*   [2025-05-10 16:17:00] - **Debug Status Update (tshark fields):**
+    *   Corrected and removed problematic `tshark` fields in [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) based on error logs and `tshark_beacon_example.json`.
+    *   Specifically, `wlan.flags.retry` changed to `wlan.fc.retry`.
+    *   Removed `radiotap.mcs.flags`, `radiotap.vht.mcs`, `radiotap.vht.nss`, `radiotap.he.mcs`, `radiotap.he.bw`, `radiotap.he.gi`, `radiotap.he.nss`, and `wlan.he.phy.channel_width_set`.
+    *   This aims to resolve `tshark` execution errors.
+    *   Memory Bank: `decisionLog.md` updated with this decision. `progress.md` to be updated.
+# Active Context
+
+*   [2025-05-10 15:30:00] - **当前焦点:** 完成 `gopacket` 到 `tshark` 解析逻辑的迁移。
+*   [2025-05-10 15:30:00] - **近期变更 (tshark 解析迁移):**
+    *   文件 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go): 完全重写以实现基于 `tshark` 的解析。引入 `TSharkExecutor`, `CSVParser`, `FrameProcessor`。`ProcessPcapFile` (原 `ProcessPcapStream`) 更新。`ParsedFrameInfo` 调整。
+    *   文件 [`desktop_app/WifiPcapAnalyzer/config/config.go`](desktop_app/WifiPcapAnalyzer/config/config.go): 添加 `TsharkPath` 配置项。
+    *   文件 [`desktop_app/WifiPcapAnalyzer/config/config.json`](desktop_app/WifiPcapAnalyzer/config/config.json): 添加 `tshark_path` 默认值。
+    *   文件 [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go): 修复因 `ParsedFrameInfo` 结构和类型更改引起的编译错误。
+    *   文件 [`desktop_app/WifiPcapAnalyzer/app.go`](desktop_app/WifiPcapAnalyzer/app.go): 更新对 `frame_parser.ProcessPcapFile` 的调用，并处理 `TsharkPath` 配置。
+    *   文件 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser_test.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser_test.go): 已删除，因其测试内容基于旧的 `gopacket` 实现。
+    *   Memory Bank: `memory-bank/activeContext.md` 本次更新。
+    *   Memory Bank: `memory-bank/progress.md` 即将更新。
+    *   Memory Bank: `memory-bank/decisionLog.md` 即将更新（记录迁移到 tshark 的实现细节）。
+
+---
+(Existing content will follow this new entry)
 # Active Context
 
 This file tracks the project's current status, including recent changes, current goals, and open questions.
@@ -287,3 +322,14 @@ This file tracks the project's current status, including recent changes, current
         *   `parsePacketLayers`: 当 `dot11Layer` 为 `nil` 时 (即使 Radiotap 层存在)，函数现在也会记录错误并返回 `nil, error`，以确保不处理没有 Dot11 层的数据包。
         *   `parsePacketLayers`: `gopacket.NewPacket` 的解码选项从 `gopacket.Default` 修改为 `gopacket.Lazy`，以期提高对某些类型损坏数据包的容错性。
     *   目的是减少因 `gopacket` 解析错误导致下游指标计算失败的情况。
+*   [2025-05-10 15:12:00] - **当前焦点:** 设计将 PC 端分析引擎中的 `gopacket` 解析替换为 `tshark` 的详细架构。
+*   [2025-05-10 15:12:00] - **近期变更 (架构设计):**
+    *   定义了基于 `tshark -T fields` 命令输出（CSV格式）的新解析流程。
+    *   核心组件包括 `TSharkExecutor` (管理 `tshark` 进程), `CSVParser` (解析CSV输出), 和 `FrameProcessor` (将CSV行数据转换为 `ParsedFrameInfo`)。
+    *   保留 `PhyRateCalculator` 和 `PacketInfoHandler` 接口，调整输入源。
+    *   详细规划了错误处理、日志记录及与现有代码的集成点。
+    *   确定了需要从 `tshark` 提取的完整字段列表。
+    *   Memory Bank: [`memory-bank/developmentContext/pcAnalysisEngine.md`](memory-bank/developmentContext/pcAnalysisEngine.md:1) 已更新，增加了关于 `tshark` 替换方案的新架构章节。
+    *   Memory Bank: [`memory-bank/decisionLog.md`](memory-bank/decisionLog.md:1) 已记录此架构决策。
+    *   Memory Bank: [`memory-bank/activeContext.md`](memory-bank/activeContext.md:1) 本次更新。
+    *   Memory Bank: [`memory-bank/progress.md`](memory-bank/progress.md:1) 即将更新。

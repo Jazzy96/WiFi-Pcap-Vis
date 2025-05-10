@@ -57,9 +57,34 @@ func (a *App) startup(ctx context.Context) {
 	log.Printf("State Manager initialized (Metrics Interval: %v, History Points: %d).", metricsInterval, historyPoints)
 
 	// Initialize Packet Info Handler
-	a.packetInfoHandler = func(parsedInfo *frame_parser.ParsedFrameInfo) {
-		if parsedInfo != nil {
-			a.stateMgr.ProcessParsedFrame(parsedInfo)
+	a.packetInfoHandler = func(frame *frame_parser.ParsedFrameInfo) {
+		if frame != nil {
+			log.Printf("DEBUG_PACKET_HANDLER: Received ParsedFrameInfo: Timestamp=%v, SA=%s, DA=%s, BSSID=%s, SSID=%s, Signal=%d, FrameType=%s, Channel=%d, BW=%s", frame.Timestamp, frame.SA, frame.DA, frame.BSSID, frame.SSID, frame.SignalStrength, frame.FrameType, frame.Channel, frame.Bandwidth)
+
+			// Log before calling StateManager updates
+			// Note: ProcessParsedFrame handles both BSS and STA updates internally.
+			// We'll log based on the information present in the frame.
+
+			if frame.BSSID != nil && len(frame.BSSID) > 0 {
+				log.Printf("DEBUG_SM_CALL_BSS: Calling UpdateBss (via ProcessParsedFrame) with BSSID: %s, SSID: %s, Channel: %d", frame.BSSID, frame.SSID, frame.Channel)
+			}
+
+			// For STA, SA is usually the STA's MAC. BSSID is its associated AP.
+			// DA can also be a STA in some contexts (e.g. AP sending to STA)
+			// We'll focus on SA as the primary STA identifier for this log.
+			if frame.SA != nil && len(frame.SA) > 0 && frame.BSSID != nil && len(frame.BSSID) > 0 {
+				// Example for STA based on Source Address
+				log.Printf("DEBUG_SM_CALL_STA: Calling UpdateSta (via ProcessParsedFrame) for SA_MAC: %s, related BSSID: %s, Signal: %d", frame.SA, frame.BSSID, frame.SignalStrength)
+			} else if frame.DA != nil && len(frame.DA) > 0 && frame.BSSID != nil && len(frame.BSSID) > 0 && (frame.FrameType == "Data" || frame.FrameType == "QoSData") {
+				// Example for STA based on Destination Address in Data frames from AP
+				// This is a common scenario where DA is the client STA.
+				// Check if DA is unicast before logging as a STA call
+				// For simplicity, we assume DA could be a STA here if BSSID is also present.
+				// A more robust check would involve `utils.IsUnicastMAC(frame.DA)`
+				log.Printf("DEBUG_SM_CALL_STA: Calling UpdateSta (via ProcessParsedFrame) for DA_MAC: %s, related BSSID: %s, Signal: %d", frame.DA, frame.BSSID, frame.SignalStrength)
+			}
+
+			a.stateMgr.ProcessParsedFrame(frame)
 			// Snapshot broadcasting will be handled by a ticker using Wails events
 		}
 	}
@@ -67,7 +92,13 @@ func (a *App) startup(ctx context.Context) {
 	// Initialize PCAP Stream Handler
 	a.pcapStreamHandler = func(pcapStream io.Reader) {
 		log.Println("Wails pcapStreamHandler invoked, starting ProcessPcapStream.")
-		frame_parser.ProcessPcapStream(pcapStream, a.packetInfoHandler)
+		// The pcapStream is an io.Reader directly from the gRPC client.
+		// It will be piped to tshark's stdin.
+		err := frame_parser.ProcessPcapStream(pcapStream, a.appConfig.TsharkPath, a.packetInfoHandler)
+		if err != nil {
+			log.Printf("Error processing pcap stream with tshark: %v", err)
+			runtime.EventsEmit(a.ctx, "error", fmt.Sprintf("Error processing pcap stream with tshark: %v", err))
+		}
 	}
 
 	// Initialize gRPC Client
@@ -85,11 +116,14 @@ func (a *App) startup(ctx context.Context) {
 	snapshotTicker := time.NewTicker(500 * time.Millisecond) // Send updates every 500 milliseconds
 	go func() {
 		defer snapshotTicker.Stop()
+		log.Println("DEBUG_APP_LOOP: Periodic UI update mechanism (e.g., loop/ticker) has started.")
 		for {
 			select {
 			case <-snapshotTicker.C:
 				if a.isCaptureActive.Load() {
+					log.Println("DEBUG_APP_EVENT: Attempting to get snapshot and emit event.")
 					snapshot := a.stateMgr.GetSnapshot()
+					log.Printf("DEBUG_APP_EVENT: Snapshot created. BSS count: %d, STA count: %d. Emitting event now.", len(snapshot.BSSs), len(snapshot.STAs))
 					runtime.EventsEmit(a.ctx, "state_snapshot", snapshot)
 				}
 			case <-a.ctx.Done(): // App is shutting down

@@ -14,6 +14,7 @@ type AppConfig struct {
 	LogFile            string `json:"log_file"`
 	LogLevel           string `json:"log_level"`
 	MinBSSCreationRSSI int    `json:"min_bss_creation_rssi"`
+	TsharkPath         string `json:"tshark_path"` // Path to tshark executable
 }
 
 // DefaultConfig provides a default configuration.
@@ -23,6 +24,7 @@ var DefaultConfig = AppConfig{
 	LogFile:            "pc_analyzer.log",     // Default log file
 	LogLevel:           "info",                // Default log level (e.g., debug, info, warn, error)
 	MinBSSCreationRSSI: -84,                   // Default minimum RSSI for BSS creation
+	TsharkPath:         "tshark",              // Default tshark path (assumes it's in PATH)
 }
 
 // GlobalConfig holds the global application configuration.
@@ -78,6 +80,10 @@ func LoadConfig(filePath string) AppConfig {
 	if cfg.MinBSSCreationRSSI == 0 {
 		cfg.MinBSSCreationRSSI = DefaultConfig.MinBSSCreationRSSI
 		log.Printf("MinBSSCreationRSSI not found or set to 0 in config, using default value: %d\n", DefaultConfig.MinBSSCreationRSSI)
+	}
+	if cfg.TsharkPath == "" {
+		cfg.TsharkPath = DefaultConfig.TsharkPath
+		log.Printf("TsharkPath not found in config, using default value: %s\n", DefaultConfig.TsharkPath)
 	}
 
 	GlobalConfig = cfg // Set the global config

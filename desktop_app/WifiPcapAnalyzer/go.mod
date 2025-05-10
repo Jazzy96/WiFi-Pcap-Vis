@@ -3,7 +3,6 @@ module WifiPcapAnalyzer
 go 1.23
 
 require (
-	github.com/google/gopacket v1.1.19
 	github.com/stretchr/testify v1.10.0
 	github.com/wailsapp/wails/v2 v2.10.1
 	google.golang.org/grpc v1.72.0

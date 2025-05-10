@@ -3,5 +3,6 @@
   "websocket_address": "0.0.0.0:8080",
   "log_file": "pc_analyzer.log",
   "log_level": "info",
-  "min_bss_creation_rssi": -84
-}
+  "min_bss_creation_rssi": -84,
+  "tshark_path": "tshark"
+ }

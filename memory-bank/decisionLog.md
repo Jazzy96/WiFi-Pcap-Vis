@@ -1,3 +1,115 @@
+---
+### Decision (Debug - Parser Robustness)
+[2025-05-10 17:19:00] - [Enhance `parser.go` to be more tolerant of empty/malformed non-critical fields]
+
+**Rationale:**
+User reported that the frontend shows no data, and BSS/STA entries are not created as expected. Previous logs indicated many empty fields in `tshark`'s CSV output. The existing parsing logic in `ProcessRow` was strict, potentially discarding entire frames if non-critical fields like `radiotap.channel.freq`, `radiotap.dbm_antsignal`, or `wlan.duration` were present but malformed, or if `frame.time_epoch` parsing failed (which used `time.Now()` as a fallback, which is not ideal). This strictness could prevent valid frame data from reaching the state manager.
+
+**Details:**
+*   **Affected Files:**
+    *   [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go)
+*   **Changes Made:**
+    1.  **Timestamp Fallback:** If `frame.time_epoch` parsing fails, `info.Timestamp` is now set to `time.Time{}` (zero value). The parsing failure for this field remains a critical error that causes the frame to be skipped.
+    2.  **Relaxed Error Handling for `radiotap.channel.freq`:** If this field is present but unparsable, an error is logged, but it's no longer added to `parseErrors` (which would discard the frame). The field in `ParsedFrameInfo` retains its default.
+    3.  **Relaxed Error Handling for `radiotap.dbm_antsignal`:** Similar to `radiotap.channel.freq`, parsing errors for present-but-malformed values are logged but do not cause frame discard.
+    4.  **Relaxed Error Handling for `wlan.duration`:** Similar to the above, parsing errors for present-but-malformed values are logged but do not cause frame discard.
+*   **Expected Outcome:** The parser should now be more resilient. Frames with issues in these less critical fields will still be processed for their valid data, increasing the likelihood of BSS/STA entries being created and data appearing on the frontend. Critical parsing errors (e.g., for `frame.len`, `wlan.fc.type_subtype`, or malformed MACs) will still lead to frame discard.
+---
+### Decision (Debug - CSV Data Parsing)
+[2025-05-10 16:29:36] - [Request detailed logs for CSV row parsing in `parser.go`]
+
+**Rationale:**
+The `tshark` command execution and CSV header parsing are now successful, as indicated by the latest logs. However, the user still reports errors, suggesting the problem lies in the parsing of individual CSV data rows or subsequent data processing. To pinpoint the issue, detailed logging within the `ProcessRow` function (or its equivalent) in [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) is required.
+
+**Details:**
+*   **Affected Files:**
+    *   [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go)
+*   **Next Step:** Ask the user to add specific `log.Printf` and `log.Errorf` statements to trace:
+    1.  Raw CSV row data.
+    2.  Parsing attempts for each key field (name, raw value).
+    3.  Errors during field extraction or conversion (field name, raw value, error details).
+    4.  Successfully parsed `ParsedFrameInfo` object summary before callback.
+    5.  A marker before calling the `packetInfoHandler`.
+*   This will provide granular insight into the data parsing flow and help identify where the error occurs.
+---
+### Decision (Debug - tshark Field Correction)
+[2025-05-10 16:17:00] - [Correct invalid tshark fields and remove problematic ones]
+
+**Rationale:**
+Based on `tshark` error logs and `tshark_beacon_example.json`, several fields in the `defaultTsharkFields` list in `parser.go` were either incorrect or not consistently available, causing `tshark` to fail or report errors. The strategy is to correct known field names and remove fields that are problematic and not strictly essential for core functionality, ensuring `tshark` can execute successfully.
+
+**Details:**
+*   **Affected Files:**
+    *   [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go)
+*   **Field Name Changes and Removals:**
+    *   Corrected `wlan.flags.retry` to `wlan.fc.retry`.
+    *   Removed `radiotap.mcs.flags` (not found in example, caused error).
+    *   Removed `radiotap.vht.mcs` (caused error, VHT MCS info can be inferred from WLAN layer if needed).
+    *   Removed `radiotap.vht.nss` (caused error, VHT NSS info can be inferred from WLAN layer if needed).
+    *   Removed `radiotap.he.mcs` (caused error, HE MCS info can be inferred from WLAN layer if needed).
+    *   Removed `radiotap.he.bw` (caused error, HE BW info can be inferred from WLAN layer if needed).
+    *   Removed `radiotap.he.gi` (caused error, HE GI info can be inferred from WLAN layer if needed).
+    *   Removed `radiotap.he.nss` (caused error, HE NSS info can be inferred from WLAN layer if needed).
+    *   Removed `wlan.he.phy.channel_width_set` (caused error, specific subfields exist in example, or can be inferred).
+*   **Impact:** These changes are expected to resolve `tshark` startup errors related to invalid fields, allowing the packet parsing process to proceed. This prioritizes getting the core parsing pipeline functional.
+# Decision Log
+
+---
+### Decision (Debug - tshark Stream Handling)
+[2025-05-10 15:39:00] - [Modify tshark parser to handle gRPC stream input]
+
+**Rationale:**
+The `tshark` based parser, as initially implemented, expected a file path for pcap data. However, the gRPC `pcapStreamHandler` provides an `io.Reader` representing a live data stream. This mismatch caused the `WARN_APP: pcapStreamHandler received a stream that is not a file. TShark processing requires a file path.` error. The fix involves modifying the parser to accept an `io.Reader` and pipe this stream directly to `tshark`'s standard input.
+
+**Details:**
+*   **Affected Files:**
+    *   [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go)
+    *   [`desktop_app/WifiPcapAnalyzer/app.go`](desktop_app/WifiPcapAnalyzer/app.go)
+*   **Changes in [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go):**
+    1.  **`TSharkExecutor.StartStream` method:** A new method `StartStream(pcapStream io.Reader, tsharkPath string, fields []string)` was added. This method configures `tshark` to read from standard input (`-r -`) and sets `cmd.Stdin = pcapStream`.
+    2.  **`ProcessPcapStream` function:** A new function `ProcessPcapStream(pcapStream io.Reader, tsharkPath string, pktHandler PacketInfoHandler) error` was created. This function:
+        *   Uses `TSharkExecutor.StartStream` to launch `tshark` with the provided `io.Reader`.
+        *   The rest of the logic (CSV parsing, frame processing) is similar to `ProcessPcapFile` but adapted for the stream context (e.g., logging messages indicate stream processing).
+*   **Changes in [`desktop_app/WifiPcapAnalyzer/app.go`](desktop_app/WifiPcapAnalyzer/app.go):**
+    1.  **`pcapStreamHandler` modification:** The `a.pcapStreamHandler` function was updated. Instead of trying to treat the `io.Reader` as a file path, it now directly calls the new `frame_parser.ProcessPcapStream` function, passing the `pcapStream` (which is the `io.Reader` from gRPC) and the `tsharkPath` from config.
+*   **Expected Outcome:** The application can now correctly process live pcap data streamed from the gRPC agent by piping it directly to `tshark`'s standard input, resolving the file path requirement issue.
+
+---
+### Decision (Code - Parser Implementation)
+[2025-05-10 15:30:00] - [Implement tshark-based parsing logic]
+
+**Rationale:**
+To address persistent issues with `gopacket`'s robustness in handling diverse 802.11 frames and to improve parsing accuracy, the decision was made to replace `gopacket` with `tshark` for frame parsing, as per the architecture defined in `memory-bank/developmentContext/pcAnalysisEngine.md` and recorded in a previous decision log entry ([2025-05-10] - [Architectural Shift: Replace `gopacket` with `tshark` for 802.11 Frame Parsing]). This entry details the implementation of that architectural decision.
+
+**Details:**
+*   **Affected Files:**
+    *   [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go): Major rewrite.
+    *   [`desktop_app/WifiPcapAnalyzer/config/config.go`](desktop_app/WifiPcapAnalyzer/config/config.go) & [`desktop_app/WifiPcapAnalyzer/config/config.json`](desktop_app/WifiPcapAnalyzer/config/config.json): Added `TsharkPath` configuration.
+    *   [`desktop_app/WifiPcapAnalyzer/app.go`](desktop_app/WifiPcapAnalyzer/app.go): Updated to call new parser function and use `TsharkPath`.
+    *   [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go): Adapted to changes in `ParsedFrameInfo` (e.g., `FrameType` is now string, `WlanFcType`/`WlanFcSubtype` used for type checks).
+    *   [`desktop_app/WifiPcapAnalyzer/frame_parser/parser_test.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser_test.go): Deleted as it was based on `gopacket`.
+*   **Implementation Summary in [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go):**
+    1.  **`TSharkExecutor` struct:** Created to manage `tshark` process execution, including starting the process with specified fields and handling its stdout/stderr.
+    2.  **`CSVParser` struct:** Implemented to read `tshark`'s CSV output, parse the header row to create a field-to-index map, and read subsequent data rows.
+    3.  **`FrameProcessor` struct:** Developed to convert a parsed CSV row (map of field names to string values) into the `ParsedFrameInfo` struct. This includes:
+        *   Helper functions (`getString`, `getInt`, `getMAC`, etc.) for safe extraction and type conversion of field values.
+        *   Logic to parse `wlan.fc.type_subtype` (hex string) into `WlanFcType` (uint8), `WlanFcSubtype` (uint8), and a descriptive `FrameType` string.
+    4.  **`ParsedFrameInfo` struct:** Modified to align with fields available from `tshark` and requirements of downstream modules. Removed direct `gopacket` layer fields.
+    5.  **`ProcessPcapFile` function (replaces `ProcessPcapStream`):** Orchestrates the new workflow:
+        *   Takes pcap file path and tshark path as input.
+        *   Uses `TSharkExecutor` to run `tshark`.
+        *   Pipes `tshark`'s stdout to `CSVParser`.
+        *   Iterates through CSV rows, using `FrameProcessor` to convert each row to `ParsedFrameInfo`.
+        *   Calls the `PacketInfoHandler` callback with the `ParsedFrameInfo`.
+        *   Includes basic error logging for `tshark` execution and CSV/row processing.
+    6.  **`getPHYRateMbps` function:** Retained and adapted to calculate PHY rate based on fields now available in `ParsedFrameInfo` (populated from `tshark`'s radiotap output).
+    7.  **`CalculateFrameAirtime` function:** Logic preserved; its inputs (frame length, PHY rate) are now derived from `tshark` data.
+*   **Configuration:** `TsharkPath` added to `AppConfig` and `config.json` to specify the `tshark` executable location, defaulting to "tshark" (assuming it's in system PATH).
+*   **Error Handling:** Basic error logging implemented for `tshark` process issues, CSV parsing errors, and individual row processing failures. `tshark`'s stderr is also logged.
+*   **Expected Outcome:** A more robust and accurate frame parsing mechanism, leveraging `tshark`'s mature dissection engine, leading to better data quality for the application.
+
+---
+(Existing content will follow this new entry)
 # Decision Log
 
 This file records architectural and implementation decisions using a list format.
@@ -493,3 +605,65 @@ Extensive `gopacket` parsing errors (e.g., `Dot11 length X too short`, `ERROR_NO
     *   Clearer understanding of whether the root cause is malformed pcap data or `gopacket` parsing limitations.
     *   Improved robustness of the packet parser to gracefully handle or skip malformed packets.
     *   Reduction in parsing errors, leading to more successful extraction of data needed for metric calculations, ultimately resolving the "N/A" display on the frontend.
+---
+### Decision (Architecture - Frame Parsing Engine)
+[2025-05-10] - [Architectural Shift: Replace `gopacket` with `tshark` for 802.11 Frame Parsing]
+
+**Rationale:**
+The existing `gopacket`-based parsing logic in [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0) has encountered significant difficulties in robustly handling various 802.11 frames, particularly those that might be malformed, non-standard, or contain complex vendor-specific information elements. This has led to parsing errors (e.g., "Dot11 length X too short", "ERROR_NO_DOT11_LAYER") and an inability to reliably extract all necessary data for metric calculation (throughput, channel utilization), resulting in "N/A" values on the frontend.
+
+`tshark`, the command-line interface for Wireshark, possesses a highly mature, extensively tested, and robust packet dissection engine. By leveraging `tshark -T fields`, we can:
+1.  Delegate the complexities of low-level frame parsing to a specialized and reliable tool.
+2.  Precisely specify the exact fields required for analysis, minimizing data processing overhead.
+3.  Improve resilience against malformed or non-standard frames, as `tshark` is generally more fault-tolerant.
+4.  Simplify the Go-based parser's role to orchestrating `tshark` execution and parsing its structured CSV output.
+
+**Details:**
+*   **Affected Components:**
+    *   PC端分析引擎: [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:0) will be significantly refactored.
+    *   Configuration: May require adding `tshark` path to [`desktop_app/WifiPcapAnalyzer/config/config.json`](desktop_app/WifiPcapAnalyzer/config/config.json:0).
+*   **Architectural Changes:**
+    1.  **`TSharkExecutor`:** A new component responsible for launching and managing the `tshark` child process. It will configure `tshark` with the pcap file path, the extensive list of required fields (specified in the "规范：使用 tshark 输出替换 gopacket 解析"), and output formatting options (`-T fields -E header=y -E separator=, -E quote=d -E occurrence=a`). It will provide the `tshark` standard output (CSV stream) for further processing and monitor its standard error for issues.
+    2.  **`CSVParser`:** A component to read the CSV stream from `tshark`. It will parse the header row to map field names to column indices and then read subsequent data rows.
+    3.  **`FrameProcessor`:** This component will take a parsed CSV row (map of field names to string values) and convert it into the existing `ParsedFrameInfo` struct. This involves type conversions, handling missing fields, and potentially deriving some values (e.g., `FrameType`/`SubType` from `wlan.fc.type_subtype`).
+    4.  **`PhyRateCalculator`:** The existing logic for PHY rate calculation will be adapted to use input fields provided by `tshark`'s output.
+    5.  **Main Workflow:** The `ProcessPcapStream` function in `parser.go` will be rewritten. Instead of using `pcapgo` and `gopacket` directly on the pcap data, it will:
+        *   Use `TSharkExecutor` to run `tshark` on the input pcap file.
+        *   Pipe `tshark`'s output to `CSVParser`.
+        *   For each row from `CSVParser`, use `FrameProcessor` to create a `ParsedFrameInfo`.
+        *   Pass the `ParsedFrameInfo` to the existing `PacketInfoHandler` callback.
+*   **Field Extraction:** A comprehensive list of fields to be extracted via `tshark -e <field>` has been defined in the specification document, covering frame basics, MAC addresses, Radiotap info, BSS/STA details, and parameters for throughput/channel utilization.
+*   **Error Handling:** Robust error handling will be implemented at each stage: `tshark` execution, CSV parsing, and individual field processing within `FrameProcessor`.
+*   **Integration:** The `ParsedFrameInfo` struct will be largely preserved to minimize impact on the `StateManager` and other downstream components. The `PacketInfoHandler` interface remains the same.
+*   **Expected Outcome:**
+    *   Increased robustness and reliability of 802.11 frame parsing.
+    *   More accurate extraction of a wider range of specified fields.
+    *   Reduction in parsing-related errors that currently lead to "N/A" metrics.
+    *   Simplification of the Go parsing code by offloading complex dissection to `tshark`.
+
+**Memory Bank Update:**
+*   [`memory-bank/developmentContext/pcAnalysisEngine.md`](memory-bank/developmentContext/pcAnalysisEngine.md:1) will be updated with a new section detailing this `tshark`-based parsing architecture.
+---
+---
+### Decision (Debug)
+[2025-05-10 16:01:00] - [Fix tshark Field Names for Robust Parsing]
+
+**Rationale:**
+The `tshark` process was failing to start due to invalid field names in its command-line arguments. User-provided logs indicated specific fields were not recognized by `tshark`. This fix updates these incorrect field names to their valid equivalents based on analysis of `tshark`'s typical field naming conventions and a provided `tshark_beacon_example.json` example.
+
+**Details:**
+*   **Affected components/files:**
+    *   [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go)
+*   **Field Name Changes:**
+    *   `wlan.flags.retry` changed to `wlan.fc.retry`
+    *   `radiotap.mcs.fmt` changed to `radiotap.mcs.flags`
+    *   `radiotap.he.data.mcs` changed to `radiotap.he.mcs`
+    *   `radiotap.he.data.bw` changed to `radiotap.he.bw`
+    *   `radiotap.he.data.gi` changed to `radiotap.he.gi`
+    *   `radiotap.he.data.spatial_streams` changed to `radiotap.he.nss`
+    *   `wlan.ext_tag.he_operation.bss_color` changed to `wlan.ext_tag.bss_color_information.bss_color`
+    *   `wlan.ext_tag.he_phy_cap.chan_width_set` changed to `wlan.he.phy.channel_width_set` (attempted)
+*   **Unaffected Fields (Assumed Correct or Data Dependent):**
+    *   `radiotap.vht.nss` (kept as is, likely valid but data might not always be present)
+    *   `radiotap.vht.mcs` (kept as is, likely valid but data might not always be present)
+*   **Impact:** These changes are expected to resolve the `tshark` startup errors related to invalid fields, allowing the packet parsing process to proceed correctly. This ensures that all required information for downstream analysis (like HE/VHT parameters, retry flags) can be extracted if present in the capture.
