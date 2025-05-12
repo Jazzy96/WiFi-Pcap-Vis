@@ -21,32 +21,61 @@ interface StaCardItemProps {
 // Component to render a single STA within a Card
 const StaCardItem: React.FC<StaCardItemProps> = ({ sta, onClick, isSelectedForPerformance }) => {
   return (
-    <Card
-      title={`STA: ${sta.mac_address}`}
+    <div
       className={`${styles.staCard} ${isSelectedForPerformance ? styles.selectedForPerformance : ''}`}
-      onClick={onClick} // Make the card clickable
+      onClick={onClick}
     >
-      <div className={styles.staDetailsGrid}> {/* Use grid for better alignment */}
-        <div className={styles.staField}><strong>Signal:</strong> {sta.signal_strength !== null ? `${sta.signal_strength} dBm` : 'N/A'}</div>
-        <div className={styles.staField}><strong>UL Thrpt:</strong> {sta.throughput_ul_mbps !== undefined ? `${sta.throughput_ul_mbps.toFixed(2)} Mbps` : 'N/A'}</div>
-        <div className={styles.staField}><strong>DL Thrpt:</strong> {sta.throughput_dl_mbps !== undefined ? `${sta.throughput_dl_mbps.toFixed(2)} Mbps` : 'N/A'}</div>
-        <div className={styles.staField}><strong>Last Seen:</strong> {new Date(sta.last_seen).toLocaleTimeString()}</div>
+      {/* STA MAC地址 */}
+      <div className={styles.staMacAddress}>{sta.mac_address}</div>
+      
+      {/* STA主要信息网格 */}
+      <div className={styles.staInfoGrid}>
+        {/* 信号强度 */}
+        <div className={styles.staGridCell}>
+          <div className={styles.staGridLabel}>Signal</div>
+          <div className={styles.staGridValue}>{sta.signal_strength !== null ? `${sta.signal_strength} dBm` : 'N/A'}</div>
+        </div>
         
+        {/* 信道利用率 */}
+        <div className={styles.staGridCell}>
+          <div className={styles.staGridLabel}>Util</div>
+          <div className={styles.staGridValue}>{sta.util !== undefined ? `${sta.util.toFixed(1)}%` : 'N/A'}</div>
+        </div>
+        
+        {/* 吞吐量 */}
+        <div className={styles.staGridCell}>
+          <div className={styles.staGridLabel}>Throughput</div>
+          <div className={styles.staGridValue}>{sta.thrpt !== undefined ? `${(sta.thrpt/1000000).toFixed(2)} Mbps` : 'N/A'}</div>
+        </div>
+        
+        {/* 比特率 */}
+        <div className={styles.staGridCell}>
+          <div className={styles.staGridLabel}>Bitrate</div>
+          <div className={styles.staGridValue}>{sta.bitrate !== undefined ? `${sta.bitrate.toFixed(1)} Mbps` : 'N/A'}</div>
+        </div>
+        
+        {/* 最后一次见到的时间 */}
+        <div className={styles.lastSeenRow}>
+          <strong>Last Seen:</strong> {new Date(sta.last_seen).toLocaleTimeString()}
+        </div>
+        
+        {/* HT能力 */}
         {sta.ht_capabilities && (
-          <div className={`${styles.staField} ${styles.htCaps}`}>
+          <div className={styles.staCapabilities}>
             <strong>HT Capabilities:</strong>
             {formatCapabilities(sta.ht_capabilities)}
           </div>
         )}
+        
+        {/* VHT能力 */}
         {sta.vht_capabilities && (
-          <div className={`${styles.staField} ${styles.vhtCaps}`}>
+          <div className={styles.staCapabilities}>
             <strong>VHT Capabilities:</strong>
             {formatCapabilities(sta.vht_capabilities)}
           </div>
         )}
-        {/* Add other STA details as needed */}
       </div>
-    </Card>
+    </div>
   );
 };
 

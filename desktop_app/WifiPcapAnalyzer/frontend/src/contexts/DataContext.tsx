@@ -41,6 +41,114 @@ const initialState: AppState = {
 const AppStateContext = createContext<AppState | undefined>(undefined);
 const AppDispatchContext = createContext<React.Dispatch<Action> | undefined>(undefined);
 
+// Function to transform backend STA data to frontend format
+const transformStaData = (sta: state_manager.STAInfo): STA => {
+  // Convert HTCapabilities to HTCabilities format
+  const htCapabilities = sta.ht_capabilities ? {
+    channel_width_40mhz: sta.ht_capabilities.channel_width_40mhz,
+    short_gi_20mhz: sta.ht_capabilities.short_gi_20mhz,
+    short_gi_40mhz: sta.ht_capabilities.short_gi_40mhz,
+    // Convert the array to string format as expected by frontend
+    supported_mcs_set: sta.ht_capabilities.supported_mcs_set ? sta.ht_capabilities.supported_mcs_set.join(',') : undefined,
+  } : undefined;
+
+  // Convert VHTCapabilities to VHTCabilities format
+  const vhtCapabilities = sta.vht_capabilities ? {
+    channel_width_160mhz: sta.vht_capabilities.channel_width_160mhz,
+    channel_width_80plus80mhz: sta.vht_capabilities.channel_width_80plus80mhz,
+    channel_width_80mhz: sta.vht_capabilities.channel_width_80mhz,
+    short_gi_80mhz: sta.vht_capabilities.short_gi_80mhz,
+    short_gi_160mhz: sta.vht_capabilities.short_gi_160mhz,
+    su_beamformer_capable: sta.vht_capabilities.su_beamformer_capable,
+    mu_beamformer_capable: sta.vht_capabilities.mu_beamformer_capable
+  } : undefined;
+
+  return {
+    mac_address: sta.mac_address,
+    associated_bssid: sta.associated_bssid,
+    signal_strength: sta.signal_strength,
+    last_seen: new Date(sta.last_seen).toISOString(),
+    ht_capabilities: htCapabilities,
+    vht_capabilities: vhtCapabilities,
+    // Convert backend throughput values (bps) to frontend format (Mbps)
+    throughput_ul_mbps: sta.uplink_throughput / 1000000,
+    throughput_dl_mbps: sta.downlink_throughput / 1000000,
+    // Include other metrics
+    historical_throughput_ul: sta.historical_uplink_throughput,
+    historical_throughput_dl: sta.historical_downlink_throughput,
+    historical_channel_utilization: sta.historical_channel_utilization,
+    util: sta.util,
+    thrpt: sta.thrpt,
+    bitrate: sta.bitrate,
+    // 使用后端提供的累积统计数据，而不是硬编码为0
+    rx_bytes: sta.rx_bytes || 0,
+    tx_bytes: sta.tx_bytes || 0, 
+    rx_packets: sta.rx_packets || 0,
+    tx_packets: sta.tx_packets || 0,
+    rx_retries: sta.rx_retries || 0,
+    tx_retries: sta.tx_retries || 0,
+    // 使用站点比特率作为发送和接收比特率的估计
+    rx_bitrate_mbps: sta.bitrate || 0,
+    tx_bitrate_mbps: sta.bitrate || 0
+  };
+};
+
+// Function to transform backend BSS data to frontend format, including its associated STAs
+const transformBssData = (bss: state_manager.BSSInfo): BSS => {
+  // Convert associated STAs
+  const associatedStas: { [mac: string]: STA } = {};
+  
+  // Process each associated STA in the BSS
+  if (bss.associated_stas) {
+    Object.entries(bss.associated_stas).forEach(([mac, sta]) => {
+      if (sta) {
+        // Use the same transformStaData function to ensure consistency
+        associatedStas[mac] = transformStaData(sta);
+      }
+    });
+  }
+
+  // Convert HTCapabilities to HTCabilities format
+  const htCapabilities = bss.ht_capabilities ? {
+    channel_width_40mhz: bss.ht_capabilities.channel_width_40mhz,
+    short_gi_20mhz: bss.ht_capabilities.short_gi_20mhz,
+    short_gi_40mhz: bss.ht_capabilities.short_gi_40mhz,
+    // Convert the array to string format as expected by frontend
+    supported_mcs_set: bss.ht_capabilities.supported_mcs_set ? bss.ht_capabilities.supported_mcs_set.join(',') : undefined,
+  } : undefined;
+
+  // Convert VHTCapabilities to VHTCabilities format
+  const vhtCapabilities = bss.vht_capabilities ? {
+    channel_width_160mhz: bss.vht_capabilities.channel_width_160mhz,
+    channel_width_80plus80mhz: bss.vht_capabilities.channel_width_80plus80mhz,
+    channel_width_80mhz: bss.vht_capabilities.channel_width_80mhz,
+    short_gi_80mhz: bss.vht_capabilities.short_gi_80mhz,
+    short_gi_160mhz: bss.vht_capabilities.short_gi_160mhz,
+    su_beamformer_capable: bss.vht_capabilities.su_beamformer_capable,
+    mu_beamformer_capable: bss.vht_capabilities.mu_beamformer_capable
+  } : undefined;
+
+  return {
+    bssid: bss.bssid,
+    ssid: bss.ssid,
+    channel: bss.channel,
+    bandwidth: bss.bandwidth,
+    security: bss.security,
+    signal_strength: bss.signal_strength,
+    last_seen: new Date(bss.last_seen).toISOString(),
+    ht_capabilities: htCapabilities,
+    vht_capabilities: vhtCapabilities,
+    associated_stas: associatedStas,
+    // Convert metrics
+    channel_utilization_percent: bss.channel_utilization,
+    total_throughput_mbps: bss.throughput / 1000000, // Convert from bps to Mbps
+    historical_channel_utilization: bss.historical_channel_utilization,
+    historical_total_throughput: bss.historical_throughput,
+    util: bss.util,
+    thrpt: bss.thrpt
+  };
+};
+
 const appReducer = (state: AppState, action: Action): AppState => {
   switch (action.type) {
     case 'SET_SNAPSHOT_DATA':
@@ -52,9 +160,11 @@ const appReducer = (state: AppState, action: Action): AppState => {
       // For now, assuming direct assignment works or types are compatible.
       // Also, Wails might automatically convert int64 (LastSeen) to number in JS.
       if (state.isCapturing && action.payload) {
-         // Type assertion might be needed if types differ significantly
-         const bssListFromSnapshot = action.payload.bsss as unknown as BSS[];
-         const staListFromSnapshot = action.payload.stas as unknown as STA[];
+         // Transform BSS list including associated STAs
+         const bssListFromSnapshot = action.payload.bsss.map(transformBssData);
+         
+         // Transform standalone STA list
+         const staListFromSnapshot = action.payload.stas.map(transformStaData);
 
         return {
           ...state,

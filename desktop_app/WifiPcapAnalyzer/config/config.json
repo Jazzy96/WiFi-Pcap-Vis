@@ -4,5 +4,10 @@
   "log_file": "pc_analyzer.log",
   "log_level": "info",
   "min_bss_creation_rssi": -84,
-  "tshark_path": "tshark"
+  "tshark_path": "tshark",
+  "logging": {
+  	"level": "info",
+  	"console": true,
+  	"file": null
+  }
  }

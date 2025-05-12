@@ -1,3 +1,10 @@
+*   [2025-05-10 22:33:35] - **功能实现 (STA BitRate):**
+    *   修改了后端 `frame_parser/parser.go`，在 `ParsedFrameInfo` 中添加 `BitRate` 字段，并在 `ProcessRow` 中解析 `wlan_mgt.fixed.rates.rate` 字段。
+    *   修改了后端 `state_manager/models.go`，在 `STAInfo` 结构体中添加 `BitRate` 字段。
+    *   修改了后端 `state_manager/manager.go`，在 `ProcessParsedFrame` 的 `handleSTA` 函数中更新 STA 的 `BitRate` 字段。
+    *   修改了前端 `frontend/src/types/data.ts`，在 `STA` 接口中添加 `bitrate` 字段。
+    *   修改了前端 `frontend/src/components/StaList/StaList.tsx`，在 `StaCardItem` 组件中显示 STA 的 `bitrate`。
+    *   目标是获取并显示 STA 的 BitRate。
 *   [2025-05-10 17:57:54] - **Debug Status Update (UI Display Issue):** Added detailed logging to [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go) and [`desktop_app/WifiPcapAnalyzer/app.go`](desktop_app/WifiPcapAnalyzer/app.go) to investigate missing BSS updates and state snapshot event emissions, which are suspected causes for the UI not displaying BSS/STA information. Log `DEBUG_SM_BSS_UPDATE` added to BSS creation/update paths. Logs `DEBUG_APP_EVENT: Attempting to get snapshot and emit event.` and `DEBUG_APP_EVENT: Snapshot created. BSS count: %d, STA count: %d. Emitting event now.` added around snapshot generation and emission.
 *   [2025-05-10 17:19:00] - **Debug Status Update (Parser Robustness):**
     *   Modified [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) to improve tolerance for empty or malformed non-critical CSV fields from `tshark`.
@@ -333,3 +340,5 @@ This file tracks the project's current status, including recent changes, current
     *   Memory Bank: [`memory-bank/decisionLog.md`](memory-bank/decisionLog.md:1) 已记录此架构决策。
     *   Memory Bank: [`memory-bank/activeContext.md`](memory-bank/activeContext.md:1) 本次更新。
     *   Memory Bank: [`memory-bank/progress.md`](memory-bank/progress.md:1) 即将更新。
+* [2025-05-10 20:31:00] - 修改 BssList.tsx 和 data.ts，以正确显示 Security 和 HT/VHT Cap 信息
+* [2025-05-11 00:34:18] - **Wails 窗口大小问题解决:** 移除了 [`desktop_app/WifiPcapAnalyzer/main.go`](desktop_app/WifiPcapAnalyzer/main.go) 中的窗口大小硬编码。更新了 [`desktop_app/WifiPcapAnalyzer/wails.json`](desktop_app/WifiPcapAnalyzer/wails.json) 将默认窗口尺寸设置为 1920x1080。

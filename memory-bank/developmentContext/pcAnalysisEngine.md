@@ -335,4 +335,14 @@ graph TD
 
 **时间戳:** 2025-05-10
 
+## Logging Library Migration
+
+*   **Objective:** Migrate the Go backend to use `zerolog` for improved logging efficiency and maintainability.
+*   **Changes:**
+    *   Removed temporary `fmt.Println()` and `log.Println()` statements.
+    *   Added `github.com/rs/zerolog` dependency in `go.mod`.
+    *   Verified the existence of required logging configuration structure in `config.go` and `config.json`.
+    *   Verified the existence of `zerolog` initialization logic in `main.go` and `logger.go`.
+    *   Replaced existing `log.Printf` with `zerolog` usage (e.g., `logger.Log.Info().Msgf(...)`) throughout the Go backend code.
+    *   Resolved compilation errors and import cycle issues when importing the `logger` package.
 ---

@@ -1,32 +1,33 @@
 .staListContainer {
   font-family: var(--font-primary);
   color: var(--text-color-primary-on-light);
-  height: 100%; /* Fill container height */
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .staListTitle {
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   font-weight: 600;
   color: var(--text-color-primary-on-light);
-  margin-bottom: calc(var(--spacing-unit) * 2);
-  padding-bottom: var(--spacing-unit);
+  margin: 0 0 8px 0;
+  padding-bottom: 6px;
   border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
 }
 
-.staListTitle code { /* Styling for BSSID in title */
+.staListTitle code {
   font-size: 0.9em;
   color: var(--color-tech-blue);
   background-color: color-mix(in srgb, var(--color-tech-blue) 10%, transparent);
-  padding: calc(var(--spacing-unit) * 0.25) calc(var(--spacing-unit) * 0.75);
-  border-radius: calc(var(--border-radius-base) / 2);
+  padding: 4px 6px;
+  border-radius: 3px;
 }
 
 .staListStatus {
-  padding: calc(var(--spacing-unit) * 2.5);
+  padding: 12px;
   text-align: center;
-  font-size: 1rem;
+  font-size: 0.9rem;
   color: var(--text-color-secondary-on-light);
   background-color: color-mix(in srgb, var(--color-misty-white) 90%, var(--color-graphite-gray) 5%);
   border-radius: var(--border-radius-base);
@@ -40,61 +41,107 @@
 .staList {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--spacing-unit) * 1.5); /* Space between STA cards */
+  gap: 6px;
   overflow-y: auto;
-  flex-grow: 1; /* Allow list to take available space and scroll */
-  padding-right: calc(var(--spacing-unit) * 0.5); /* Small padding for scrollbar */
+  flex-grow: 1;
+  padding-right: 4px;
 }
 
-/* Remove .staListItemDetails styles */
-
-/* Styles for the STA Card */
 .staCard {
-  /* Inherits base card styles, add specifics here if needed */
-  /* Example: slightly different padding or margin */
-  padding: var(--spacing-unit) calc(var(--spacing-unit) * 1.5);
+  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
+  border-radius: 4px;
+  padding: 8px 10px;
+  background-color: var(--color-misty-white);
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  box-shadow: var(--shadow-light);
 }
 
-/* Grid layout for details within the card */
-.staDetailsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); /* Responsive columns for details */
-  gap: calc(var(--spacing-unit) * 0.5) var(--spacing-unit); /* Row and column gap */
-  margin-top: var(--spacing-unit); /* Space below card title */
+.staCard:hover {
+  background-color: color-mix(in srgb, var(--color-tech-blue) 5%, var(--color-misty-white));
+  border-color: color-mix(in srgb, var(--color-tech-blue) 30%, transparent);
 }
 
-.staField {
-  /* margin-bottom: calc(var(--spacing-unit) * 0.75); */ /* Grid gap handles spacing */
+.staCard.selectedForPerformance {
+  background-color: color-mix(in srgb, var(--color-tech-blue) 15%, var(--color-misty-white));
+  border-color: var(--color-tech-blue);
+}
+
+.staMacAddress {
+  font-weight: 600;
+  color: var(--color-tech-blue);
   font-size: 0.9rem;
-  color: var(--text-color-secondary-on-light);
-  line-height: 1.5;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.staField strong {
+.staInfoGrid {
+  display: grid;
+  grid-template-columns: 60px 60px 90px 90px;
+  gap: 2px 4px;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+.staGridCell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+  padding-right: 2px;
+}
+
+.staGridLabel {
+  font-weight: 500;
   color: var(--text-color-primary-on-light);
-  font-weight: 500; /* Medium weight for labels */
-  margin-right: calc(var(--spacing-unit) * 0.5);
-  /* min-width: 90px; /* Less relevant in grid */
-  /* display: inline-block; */ /* Not needed in grid */
+  font-size: 0.8rem;
 }
 
-/* .staField.mac style removed as MAC is now in Card title */
-
-.htCaps,
-.vhtCaps {
+.staGridValue {
+  color: var(--text-color-secondary-on-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.8rem;
-  word-break: break-all;
+}
+
+.lastSeenRow {
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  color: var(--text-color-secondary-on-light);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  border-top: 1px dotted color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
+  padding-top: 2px;
+}
+
+.lastSeenRow strong {
+  font-weight: 500;
+  color: var(--text-color-primary-on-light);
+  margin-right: 4px;
+}
+
+.wideGridCell {
+  grid-column: span 2;
+}
+
+.staCapabilities {
+  grid-column: 1 / -1;
   background-color: color-mix(in srgb, var(--color-graphite-gray) 5%, transparent);
-  padding: calc(var(--spacing-unit) * 0.75);
-  border-radius: calc(var(--border-radius-base) / 2);
-  margin-top: var(--spacing-unit);
-  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
-  grid-column: 1 / -1; /* Make capabilities span full width */
+  padding: 6px 8px;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  border-radius: 3px;
 }
 
 .capabilitiesPre {
-  white-space: pre-wrap; /* Preserve whitespace and wrap for JSON */
-  margin: 0; /* Remove default pre margin */
-  font-size: inherit; /* Inherit font size from parent */
+  white-space: pre-wrap;
+  margin: 0;
+  font-size: 0.7rem;
   font-family: var(--font-monospace);
+  max-height: 90px;
+  overflow-y: auto;
 }

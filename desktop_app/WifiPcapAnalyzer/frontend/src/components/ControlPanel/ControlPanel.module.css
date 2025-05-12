@@ -1,245 +1,291 @@
 .controlPanel {
-  background-color: var(--color-misty-white);
-  padding: calc(var(--spacing-unit) * 2);
-  border-radius: var(--border-radius-base);
-  box-shadow: var(--shadow-light);
   font-family: var(--font-primary);
-  transition: width 0.3s ease-in-out, padding 0.3s ease-in-out, min-width 0.3s ease-in-out;
-  width: 100%; /* Take full width of its grid container cell */
-  box-sizing: border-box;
-  position: relative;
+  color: var(--text-color-primary-on-light);
+  height: 100%;
   display: flex;
   flex-direction: column;
-  min-height: 0; /* Prevent flex item from growing indefinitely */
-}
-
-.controlPanel.collapsed {
-  /* Adjust width for collapsed state, primarily for the icon/button */
-  width: calc(var(--spacing-unit) * 7); /* Approx 56px, adjust as needed */
-  min-width: calc(var(--spacing-unit) * 7);
-  padding: var(--spacing-unit);
-  align-items: center;
-  justify-content: center;
-}
-
-.panelHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: calc(var(--spacing-unit) * 1.5);
-  width: 100%;
-}
-
-.controlPanel.collapsed .panelHeader h2 {
-  display: none;
-}
-
-.controlPanel.collapsed .panelHeader {
-  justify-content: center;
-  margin-bottom: 0;
+  overflow: hidden;
 }
 
 .panelTitle {
-  margin-top: 0;
-  margin-bottom: 0; /* Removed bottom margin, spacing handled by panelHeader */
-  color: var(--text-color-primary-on-light);
-  font-size: 1.3rem; /* Adjusted size */
+  font-size: 1.2rem;
   font-weight: 600;
-  /* border-bottom: 1px solid #eee; */ /* Removed border, cleaner look */
-  /* padding-bottom: var(--spacing-unit); */
-}
-
-.collapseButton {
-  background-color: var(--color-tech-blue);
-  color: var(--color-misty-white);
-  border: none;
-  border-radius: var(--border-radius-base); /* Consistent border radius */
-  width: calc(var(--spacing-unit) * 4); /* 32px */
-  height: calc(var(--spacing-unit) * 4); /* 32px */
-  font-size: 1.4rem; /* Larger icon */
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-light);
-  flex-shrink: 0;
-  transition: background-color 0.2s ease-in-out;
-}
-
-.collapseButton:hover {
-  background-color: color-mix(in srgb, var(--color-tech-blue) 85%, black);
+  color: var(--text-color-primary-on-light);
+  margin: 0 0 8px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
 }
 
 .panelContent {
-  width: 100%;
   overflow-y: auto;
-  overflow-x: hidden;
+  flex-grow: 1;
+}
+
+/* 结构化信息区块 */
+.infoSection {
+  background-color: var(--color-misty-white);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 15%, transparent);
+  padding: 6px;
+}
+
+.infoHeader {
+  font-weight: 600;
+  color: var(--color-tech-blue);
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
+  padding-bottom: 3px;
+}
+
+/* 参数网格 */
+.paramsGrid {
   display: flex;
   flex-direction: column;
-  flex-grow: 1;
-  min-height: 0;
+  gap: 8px;
+  position: relative;
+  padding-bottom: 35px; /* 为按钮留出空间 */
 }
 
-.controlPanel.collapsed .panelContent {
-  display: none;
-}
-
-.statusIndicator { /* This component was removed from TSX, but styles are here if re-added */
-  padding: var(--spacing-unit) calc(var(--spacing-unit) * 1.5);
-  border-radius: var(--border-radius-base);
-  margin-bottom: calc(var(--spacing-unit) * 2);
-  font-weight: 600; /* Bolder font */
-  text-align: center;
-  border: 1px solid transparent;
-}
-
-.statusIndicator.connected {
-  background-color: color-mix(in srgb, var(--color-tech-blue) 15%, transparent);
-  color: color-mix(in srgb, var(--color-tech-blue) 80%, black);
-  border-color: color-mix(in srgb, var(--color-tech-blue) 40%, transparent);
-}
-
-.statusIndicator.disconnected {
-  background-color: #f8d7da; /* Consider a variable for error/warning states */
-  color: #721c24;
-  border-color: #f5c6cb;
-}
-
-.controlGroup {
-  margin-bottom: calc(var(--spacing-unit) * 2);
+.paramRow {
   display: flex;
-  flex-direction: column; /* Stack label and input/select vertically */
-  gap: var(--spacing-unit);
+  flex-direction: column;
+  margin-bottom: 8px;
 }
 
-.controlGroup label {
-  font-weight: 500; /* Medium weight */
-  color: var(--text-color-secondary-on-light); /* Softer color for labels */
-  font-size: 0.9rem;
+.paramLabel {
+  font-weight: 500;
+  color: var(--text-color-primary-on-light);
+  font-size: 0.75rem;
+  margin-bottom: 2px;
 }
 
-.inputRow { /* New class to keep input/select and its button on the same row */
+.paramValue {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 更新下拉选单样式，使其更扁平化 */
+.selectInput {
+  flex-grow: 1;
+  padding: 3px 6px;
+  border: 1px solid #d9d9d9; /* 更柔和的边框颜色 */
+  border-radius: 2px; /* 更小的圆角半径，更扁平 */
+  font-size: 0.75rem;
+  background-color: #fafafa; /* 浅灰背景，增强扁平感 */
+  color: #333333; /* 深色文本，提高可读性 */
+  box-shadow: none; /* 移除阴影 */
+  appearance: none; /* 移除默认外观 */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23595959' d='M6 8.824l4.432-4.432 1.39 1.39-5.822 5.822-5.822-5.822 1.39-1.39z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding-right: 24px; /* 为下拉箭头留出空间 */
+  transition: border-color 0.2s ease-in-out;
+}
+
+.selectInput:hover {
+  border-color: #bfbfbf; /* 悬停时边框变深 */
+}
+
+.selectInput:focus {
+  outline: none;
+  border-color: #40a9ff; /* 聚焦时突出边框 */
+  box-shadow: none; /* 保持无阴影 */
+}
+
+.selectInput:disabled {
+  background-color: #f5f5f5;
+  color: #bfbfbf;
+  cursor: not-allowed;
+  border-color: #d9d9d9;
+}
+
+/* 更新按钮容器 */
+.configButtonContainer {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  margin-bottom: 3px; /* 底部间距 */
+}
+
+/* 更新设置按钮样式 */
+.configButton {
+  padding: 2px 5px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  border-radius: 2px; /* 更小的圆角 */
+  background-color: #2D3748; /* 深蓝灰色替代蓝色 */
+  color: white;
+  border: 1px solid #4A5568; /* 稍微深一点的边框 */
+  cursor: pointer;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* 微妙的阴影效果 */
+}
+
+.configButton:hover:not(:disabled) {
+  background-color: #4A5568; /* 悬停时变亮 */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15); /* 增强阴影 */
+}
+
+.configButton:active:not(:disabled) {
+  background-color: #1A202C; /* 点击时变深 */
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2); /* 内部阴影效果 */
+}
+
+.configButton:disabled {
+  background-color: #f5f5f5; /* 禁用时使用浅灰色 */
+  border: 1px solid #d9d9d9;
+  color: #bfbfbf;
+  cursor: not-allowed;
+}
+
+/* 抓包状态显示 */
+.captureStatus {
   display: flex;
   align-items: center;
-  gap: var(--spacing-unit);
+  margin-bottom: 12px;
+  gap: 10px;
 }
 
-.controlGroup input[type="number"], /* Consider replacing with common Input component later */
-.controlGroup select {
-  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 1.5);
-  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 25%, transparent);
-  border-radius: var(--border-radius-base);
-  background-color: var(--color-misty-white);
-  color: var(--text-color-primary-on-light);
-  flex-grow: 1;
-  font-size: 0.95rem;
-  box-sizing: border-box;
-  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
-
-.controlGroup input[type="number"]:focus,
-.controlGroup select:focus {
-  outline: none;
-  border-color: var(--color-tech-blue);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-tech-blue) 30%, transparent);
-}
-
-.controlGroup input[type="number"]:disabled,
-.controlGroup select:disabled {
-  background-color: color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-
-/* Button for "Set Channel" / "Set Bandwidth" */
-.setButton {
-  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 1.5);
-  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 30%, transparent);
-  border-radius: var(--border-radius-base);
-  background-color: var(--color-misty-white);
-  color: var(--text-color-secondary-on-light);
-  cursor: pointer;
-  transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out;
-  font-size: 0.9rem;
+.statusLabel {
   font-weight: 500;
-  flex-shrink: 0; /* Prevent shrinking */
+  font-size: 0.85rem;
+  color: var(--text-color-primary-on-light);
 }
 
-.setButton:hover:not(:disabled) {
-  background-color: color-mix(in srgb, var(--color-tech-blue) 10%, var(--color-misty-white));
-  border-color: var(--color-tech-blue);
-  color: var(--color-tech-blue);
+.statusValue {
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  border-radius: 2px; /* 与其他元素保持一致 */
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
 }
 
-.setButton:disabled {
-  background-color: color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
-  border-color: color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
-  color: color-mix(in srgb, var(--text-color-secondary-on-light) 70%, transparent);
-  cursor: not-allowed;
+.capturing {
+  background-color: #f6ffed; /* 浅绿色背景 */
+  border: 1px solid #b7eb8f;
+  color: #52c41a; /* 绿色文本 */
 }
 
-.actionButtons { /* Container for Start/Stop button */
-  margin-top: calc(var(--spacing-unit) * 2);
-  display: flex;
-  flex-direction: column; /* Stack buttons if multiple, or ensure full width for single button */
-  gap: var(--spacing-unit);
+.notCapturing {
+  background-color: #f5f5f5; /* 浅灰色背景 */
+  border: 1px solid #d9d9d9;
+  color: #8c8c8c; /* 灰色文本 */
+}
+
+.statusValue::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.capturing::before {
+  background-color: #52c41a; /* 绿色圆点 */
+}
+
+.notCapturing::before {
+  background-color: #bfbfbf; /* 灰色圆点 */
+}
+
+/* 按钮样式 */
+.actionButtons {
+  margin-top: 8px;
 }
 
 .actionButton {
-  padding: calc(var(--spacing-unit) * 1.25) calc(var(--spacing-unit) * 2);
-  font-size: 1rem;
+  width: 100%;
+  padding: 4px 8px;
+  font-weight: 500; /* 稍微减轻字重 */
+  font-size: 0.75rem;
+  border-radius: 2px; /* 更小的圆角，与其他元素保持一致 */
   border: none;
-  border-radius: var(--border-radius-base);
   cursor: pointer;
-  transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-  font-weight: 600;
-  color: var(--color-misty-white);
-  width: 100%; /* Make action buttons full width */
-  box-shadow: var(--shadow-light);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* 微妙的阴影效果 */
+}
+
+.start {
+  background-color: #276749; /* 深绿色替代蓝色 */
+  color: white;
+  border: 1px solid #38A169; /* 稍微亮一点的边框 */
+}
+
+.start:hover:not(:disabled) {
+  background-color: #38A169; /* 悬停时变亮 */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15); /* 增强阴影 */
+}
+
+.start:active:not(:disabled) {
+  background-color: #1C4532; /* 点击时变深 */
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2); /* 内部阴影效果 */
+}
+
+.stop {
+  background-color: #C53030; /* 深红色替代亮红色 */
+  color: white;
+  border: 1px solid #E53E3E; /* 稍微亮一点的边框 */
+}
+
+.stop:hover:not(:disabled) {
+  background-color: #E53E3E; /* 悬停时变亮 */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15); /* 增强阴影 */
+}
+
+.stop:active:not(:disabled) {
+  background-color: #9B2C2C; /* 点击时变深 */
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2); /* 内部阴影效果 */
 }
 
 .actionButton:disabled {
-  background-color: color-mix(in srgb, var(--color-graphite-gray) 40%, transparent) !important;
-  color: color-mix(in srgb, var(--color-misty-white) 70%, transparent) !important;
+  background-color: #f5f5f5;
+  border: 1px solid #d9d9d9;
+  color: #bfbfbf;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
-.actionButton.start {
-  background-color: var(--color-tech-blue);
-}
-
-.actionButton.start:hover:not(:disabled) {
-  background-color: color-mix(in srgb, var(--color-tech-blue) 85%, black);
-  box-shadow: var(--shadow-medium);
-}
-
-.actionButton.stop {
-  background-color: #D32F2F; /* A distinct red for stop/danger, consider adding to vars if used elsewhere */
-}
-
-.actionButton.stop:hover:not(:disabled) {
-  background-color: color-mix(in srgb, #D32F2F 85%, black);
-  box-shadow: var(--shadow-medium);
-}
-
-/* Responsive adjustments if needed specifically for control panel */
+/* 响应式调整 */
 @media (max-width: 768px) {
   .panelTitle {
-    font-size: 1.15rem;
+    font-size: 1.1rem;
   }
-  .controlGroup label {
-    font-size: 0.85rem;
-  }
-  .controlGroup input[type="number"],
-  .controlGroup select,
-  .setButton {
+  
+  .infoHeader {
     font-size: 0.9rem;
-    padding: var(--spacing-unit);
   }
+  
+  .paramLabel,
+  .statusLabel {
+    font-size: 0.8rem;
+  }
+  
+  .selectInput,
+  .statusValue {
+    font-size: 0.8rem;
+  }
+  
+  .configButton,
   .actionButton {
-    font-size: 0.95rem;
-    padding: var(--spacing-unit) calc(var(--spacing-unit) * 1.5);
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .paramsGrid {
+    padding-bottom: 36px; /* 为更小的设置按钮留出空间 */
+  }
+  
+  .configButton {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+  }
+  
+  .actionButton {
+    padding: 6px 10px;
   }
 }

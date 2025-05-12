@@ -11,6 +11,9 @@ export default defineConfig({
     // Sourcemaps for debugging
     sourcemap: process.env.NODE_ENV !== 'production',
   },
+  esbuild: {
+    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
+  },
   // Optional: server configuration if needed during dev
   server: {
     port: 3000, // Or any other port you prefer for Vite dev server

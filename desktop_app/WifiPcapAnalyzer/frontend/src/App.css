@@ -15,59 +15,67 @@
 .App-main {
   flex-grow: 1;
   display: grid;
-  /* Three columns: ControlPanel, BssList, StaList */
-  /* Use fractional units for all columns for maximum flexibility */
-  grid-template-columns: 1fr 1fr 1fr; /* Give CP less space proportionally */
-  gap: calc(var(--spacing-unit) * 2);
-  padding: calc(var(--spacing-unit) * 2);
+  /* 四列布局: ControlPanel (固定), BssList (固定), StaList (固定), PerformancePanel (自适应) */
+  grid-template-columns: 160px 350px 350px 1fr;
+  gap: 8px;
+  padding: 8px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  overflow: hidden; /* Prevent main container from scrolling due to children */
+  overflow: hidden; /* 防止main容器滚动 */
+  height: calc(100vh - 8px); /* 计算高度 */
 }
 
-/* General container styling for sections within App-main */
+/* 所有面板容器的通用样式 */
 .bss-list-container,
 .sta-list-container-wrapper,
-.performance-detail-panel-container { /* Added performance panel */
+.performance-detail-panel-container,
+.control-panel-container {
   background-color: var(--color-misty-white);
-  padding: calc(var(--spacing-unit) * 1.5);
+  padding: 10px;
   border-radius: var(--border-radius-base);
   box-shadow: var(--shadow-light);
-  overflow-y: auto; /* Allow vertical scroll within each panel */
-  height: calc(100vh - (var(--spacing-unit) * 4)); /* Adjust height to fill viewport minus padding */
-  /* Consider adding a max-height if 100vh is too much */
+  overflow-y: auto; /* 允许垂直滚动 */
+  height: 100%; /* 填充父容器高度 */
+  min-width: 0; /* 防止内容溢出 */
 }
 
-.control-panel-container { /* Only positioning and transition styles remain */
+/* 控制面板容器 */
+.control-panel-container {
   grid-column: 1 / 2;
-  transition: min-width 0.3s ease-in-out, max-width 0.3s ease-in-out; /* Transition min/max width */
-  /* Let ControlPanel.module.css handle background, padding, border, shadow */
-  /* Ensure it can shrink */
-  overflow: hidden;
+  width: 160px; /* 固定宽度 */
+  min-width: 160px; /* 最小宽度 */
+  max-width: 160px; /* 最大宽度 */
+  background-color: var(--color-misty-white);
+  padding: 10px;
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-light);
+  overflow-y: auto; /* 允许垂直滚动 */
+  height: 100%; /* 填充父容器高度 */
 }
 
-.control-panel-container.collapsed {
-   /* Override grid fraction with fixed width */
-   /* Use max-width and min-width to force the collapsed size */
-   min-width: 60px;
-   max-width: 60px;
-   /* Padding is handled by ControlPanel.module.css */
-  /* The actual hiding of content within ControlPanel is handled by ControlPanel.tsx */
-}
-
+/* BSS列表容器 */
 .bss-list-container {
   grid-column: 2 / 3;
+  width: 350px; /* 固定宽度 */
+  min-width: 350px; /* 最小宽度 */
+  max-width: 350px; /* 最大宽度 */
 }
 
+/* STA列表容器 */
 .sta-list-container-wrapper {
   grid-column: 3 / 4;
+  width: 350px; /* 固定宽度 */
+  min-width: 350px; /* 最小宽度 */
+  max-width: 350px; /* 最大宽度 */
 }
 
+/* 性能面板容器 */
 .performance-detail-panel-container {
-  grid-column: 4 / 5; /* New column for performance panel */
+  grid-column: 4 / 5;
+  min-width: 0; /* 允许收缩 */
+  flex-grow: 1; /* 获取剩余所有空间 */
 }
-
 
 .App-footer {
   background-color: var(--color-graphite-gray);
@@ -79,88 +87,128 @@
   /* margin-top: auto; /* Footer might not be needed if main content fills height */
 }
 
-/* Responsive adjustments for smaller screens */
-@media (max-width: 1200px) { /* Adjusted breakpoint for 4 columns */
+/* 响应式布局调整 */
+@media (max-width: 1400px) {
   .App-main {
-    /* Stack performance panel below BSS/STA */
-    grid-template-columns: auto 1fr 1.5fr; /* CP, BSS, STA */
-    grid-template-rows: auto auto; /* Row for CP/BSS/STA, Row for Perf Panel */
+    grid-template-columns: 160px 320px 320px 1fr;
   }
-  .performance-detail-panel-container {
-    grid-column: 1 / -1; /* Span all columns */
-    grid-row: 2 / 3;
-    margin-top: calc(var(--spacing-unit) * 2);
+  
+  .bss-list-container {
+    width: 320px;
+    min-width: 320px;
+    max-width: 320px;
+  }
+  
+  .sta-list-container-wrapper {
+    width: 320px;
+    min-width: 320px;
+    max-width: 320px;
   }
 }
 
-@media (max-width: 900px) { /* Lowered breakpoint further */
+/* 当窗口宽度不足以显示所有列时进行堆叠 */
+@media (max-width: 1200px) {
   .App-main {
-    /* Stack BSS and STA list, and performance panel */
-    grid-template-columns: auto 1fr; /* Control Panel and combined BSS/STA/Perf */
-    grid-template-rows: auto auto auto; /* CP, BSS, STA, Perf */
+    grid-template-columns: 260px 320px 1fr;
   }
+  
+  .bss-list-container {
+    width: 320px;
+    min-width: 320px;
+  }
+  
+  .sta-list-container-wrapper {
+    grid-column: 3 / 4;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+  
+  .performance-detail-panel-container {
+    grid-column: 1 / -1;
+    grid-row: 2 / 3;
+    height: 350px; /* 固定高度 */
+    margin-top: 8px;
+  }
+}
+
+@media (max-width: 950px) {
+  .App-main {
+    grid-template-columns: 160px 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  
   .control-panel-container {
-     /* Reset width/min-width overrides from larger screens */
-     width: auto;
-     max-width: none;
-     min-width: 50px; /* Keep minimum collapsed width */
+    width: 160px;
+    min-width: 160px;
   }
-   .control-panel-container.collapsed {
-     /* Reset width/min-width overrides from larger screens */
-     width: auto;
-     max-width: none;
-     min-width: 60px; /* Ensure collapsed width is respected */
-   }
+  
   .bss-list-container {
     grid-column: 2 / 3;
-    grid-row: 1 / 2; /* BSS list on top */
-    margin-bottom: calc(var(--spacing-unit) * 2); /* Add space if stacked */
+    grid-row: 1 / 2;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    margin-bottom: 8px;
+    height: 300px; /* 固定高度 */
+    min-height: 300px;
   }
+  
   .sta-list-container-wrapper {
     grid-column: 2 / 3;
-    grid-row: 2 / 3; /* STA list below */
-    margin-bottom: calc(var(--spacing-unit) * 2);
+    grid-row: 2 / 3;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    margin-bottom: 8px;
+    height: 300px; /* 固定高度 */
+    min-height: 300px;
   }
+  
   .performance-detail-panel-container {
-    grid-column: 2 / 3; /* Align with BSS/STA */
+    grid-column: 2 / 3;
     grid-row: 3 / 4;
+    height: 350px; /* 固定高度 */
   }
 }
-
-
-@media (max-width: 768px) { /* Further stacking for smaller screens */
-  .App-main {
-    grid-template-columns: 1fr; /* Stack all sections vertically */
-    grid-template-rows: auto; /* Let content define row height */
-  }
-   .control-panel-container,
-  .bss-list-container,
-  .sta-list-container-wrapper,
-  .performance-detail-panel-container {
-    grid-column: 1 / -1; /* Each takes full width */
-    grid-row: auto; /* Auto place in sequence */
-    margin-bottom: calc(var(--spacing-unit) * 2);
-    height: auto; /* Adjust height for stacked layout */
-    min-height: 200px; /* Ensure some visibility */
-  }
-   .control-panel-container.collapsed {
-     /* Reset width/min-width overrides from larger screens */
-     width: auto;
-     max-width: none;
-     min-width: 100%; /* Ensure it takes full width when collapsed and stacked */
-   }
-}
-
 
 @media (max-width: 600px) {
   .App-main {
-    padding: calc(var(--spacing-unit) * 1.5);
-    gap: calc(var(--spacing-unit) * 1.5);
+    grid-template-columns: 1fr;
+    padding: 6px;
+    gap: 6px;
   }
+  
   .control-panel-container,
   .bss-list-container,
-  .sta-list-container-wrapper {
-    padding: var(--spacing-unit);
+  .sta-list-container-wrapper,
+  .performance-detail-panel-container {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    margin-bottom: 6px;
+    padding: 6px;
+    width: auto;
+    min-width: 100%;
+    max-width: none;
+    height: auto;
+    min-height: 200px;
+  }
+}
+
+/* 无性能面板时的三列布局 */
+.App-main.no-performance-panel {
+  grid-template-columns: 160px 350px 1fr;
+}
+
+@media (max-width: 1400px) {
+  .App-main.no-performance-panel {
+    grid-template-columns: 160px 320px 1fr;
+  }
+}
+
+@media (max-width: 950px) {
+  .App-main.no-performance-panel {
+    grid-template-columns: 160px 1fr;
   }
 }
 

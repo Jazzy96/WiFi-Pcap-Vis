@@ -13,11 +13,11 @@
 
 .input,
 select.input { /* Ensure select also gets these base styles */
-  padding: 10px;
+  padding: 4px 6px;
   border: 1px solid #ccc; /* A neutral border color */
   border-radius: var(--border-radius-base);
   font-family: var(--font-primary);
-  font-size: 1rem;
+  font-size: 0.75rem;
   background-color: var(--misty-white);
   color: var(--graphite-gray);
   transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;

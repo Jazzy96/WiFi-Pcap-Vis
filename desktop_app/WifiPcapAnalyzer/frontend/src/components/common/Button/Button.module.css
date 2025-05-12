@@ -1,9 +1,9 @@
 .button {
-  padding: 10px 15px;
+  padding: 4px 8px;
   border: none;
   border-radius: var(--border-radius-base);
   font-family: var(--font-primary);
-  font-size: 1rem;
+  font-size: 0.75rem;
   cursor: pointer;
   transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
   box-shadow: var(--shadow-light);
@@ -34,11 +34,18 @@
 }
 
 .secondary {
-  background-color: var(--misty-white);
-  color: var(--graphite-gray);
-  border: 1px solid var(--graphite-gray);
+  background-color: #2D3748; /* 深蓝灰色替代白色 */
+  color: #ffffff; /* 白色文字 */
+  border: 1px solid #4A5568; /* 稍微深一点的边框 */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* 微妙的阴影效果 */
 }
 
 .secondary:hover:not(:disabled) {
-  background-color: #e0e5e9; /* Slightly darker misty-white */
+  background-color: #4A5568; /* 悬停时变亮 */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15); /* 增强阴影 */
+}
+
+.secondary:active:not(:disabled) {
+  background-color: #1A202C; /* 点击时变深 */
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2); /* 内部阴影效果 */
 }

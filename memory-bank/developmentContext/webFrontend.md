@@ -383,4 +383,9 @@ This section details fixes applied to address issues identified during testing o
 *   **Visualizations:** Integrate charting libraries (e.g., Chart.js, Recharts) to visualize data like signal strength over time or channel utilization.
 *   **Component Styling:** Transition to CSS Modules for more robust and scoped styling if the project grows.
 *   **Testing:** Add unit and integration tests for components and services.
+## Production Build Optimization
+
+*   **Objective:** Optimize the frontend build for production by removing `console` and `debugger` calls.
+*   **Changes:**
+    *   Updated `vite.config.ts` to remove `console` and `debugger` calls in production builds.
 *   **WebSocket Port Configuration:** Make the WebSocket URL and port configurable, perhaps via an environment variable or a settings UI, rather than hardcoding `ws://localhost:8080/ws`.

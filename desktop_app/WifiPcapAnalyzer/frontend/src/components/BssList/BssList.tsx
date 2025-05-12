@@ -23,60 +23,112 @@ const BssItem: React.FC<BssItemProps> = ({ bss, isSelectedForStaList, isExpanded
     dispatch({ type: 'SET_SELECTED_PERFORMANCE_TARGET', payload: { type: 'bss', id: bss.bssid } });
   };
 
-  const cardTitle = `${bss.ssid || '(Hidden)'} (${bss.bssid})`;
-
   return (
-    <Card
-      title={cardTitle}
+    <div 
       className={`${styles.bssItem} ${isExpanded ? styles.expanded : ''} ${isSelectedForStaList ? styles.selectedForSta : ''}`}
       onClick={handleItemClick}
-      // role="button" // Card itself is not a button, but clickable
-      // tabIndex={0} // Consider accessibility for custom clickable elements
-      // onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleItemClick()}
-      // aria-expanded={isExpanded}
-      // aria-selected={isSelectedForStaList} // This might be better on a specific element if the whole card isn't "selectable" in ARIA terms
     >
-      <div className={styles.bssSummary}>
-        {/* <div className={`${styles.bssField} ${styles.bssid}`}><strong>BSSID:</strong> {bss.bssid}</div> */}
-        {/* <div className={`${styles.bssField} ${styles.ssid}`}><strong>SSID:</strong> {bss.ssid || '(Hidden)'}</div> */}
-        <div className={`${styles.bssField} ${styles.signal}`}><strong>Signal:</strong> {bss.signal_strength !== null ? `${bss.signal_strength} dBm` : 'N/A'}</div>
-        <div className={`${styles.bssField} ${styles.channel}`}><strong>Ch:</strong> {bss.channel}</div>
-        <div className={`${styles.bssField} ${styles.stationsSummary}`}><strong>STAs:</strong> {stationCount}</div>
-        <div className={`${styles.bssField} ${styles.channelUtilization}`}><strong>Util:</strong> {bss.channel_utilization_percent !== undefined ? `${bss.channel_utilization_percent.toFixed(1)}%` : 'N/A'}</div>
-        <div className={`${styles.bssField} ${styles.throughput}`}><strong>Thrpt:</strong> {bss.total_throughput_mbps !== undefined ? `${bss.total_throughput_mbps.toFixed(2)} Mbps` : 'N/A'}</div>
-        {/* Expand indicator removed based on feedback */}
-        {/* <span className={`${styles.expandIndicator} ${isExpanded ? styles.expanded : ''}`}>{isExpanded ? '▼' : '▶'}</span> */}
+      {/* BSS头部信息 - BSSID和SSID */}
+      <div className={styles.bssHeader}>
+        <div className={styles.bssId}>{bss.bssid}</div>
+        <div className={styles.bssSsid}>{bss.ssid || '(Hidden)'}</div>
       </div>
+      
+      {/* BSS主要信息 - 表格式网格布局 */}
+      <div className={styles.bssInfoGrid}>
+        {/* 信号强度 */}
+        <div className={styles.bssGridCell}>
+          <div className={styles.bssGridLabel}>Signal</div>
+          <div className={styles.bssGridValue}>{bss.signal_strength !== null ? `${bss.signal_strength} dBm` : 'N/A'}</div>
+        </div>
+        
+        {/* 信道 */}
+        <div className={styles.bssGridCell}>
+          <div className={styles.bssGridLabel}>Channel</div>
+          <div className={styles.bssGridValue}>{bss.channel}</div>
+        </div>
+        
+        {/* 关联的STA数 */}
+        <div className={styles.bssGridCell}>
+          <div className={styles.bssGridLabel}>STAs</div>
+          <div className={styles.bssGridValue}>{stationCount}</div>
+        </div>
+        
+        {/* 信道利用率 */}
+        <div className={styles.bssGridCell}>
+          <div className={styles.bssGridLabel}>Utilization</div>
+          <div className={styles.bssGridValue}>{bss.util !== undefined ? `${bss.util.toFixed(1)}%` : 'N/A'}</div>
+        </div>
+        
+        {/* 吞吐量 */}
+        <div className={styles.bssGridCell}>
+          <div className={styles.bssGridLabel}>Throughput</div>
+          <div className={styles.bssGridValue}>{bss.thrpt !== undefined ? `${(bss.thrpt/1000000).toFixed(2)} Mbps` : 'N/A'}</div>
+        </div>
+        
+        {/* 最后一次见到的时间 */}
+        <div className={styles.lastSeenRow}>
+          <strong>Last Seen:</strong> {new Date(bss.last_seen).toLocaleTimeString()}
+        </div>
+      </div>
+      
+      {/* 展开时显示详细信息 */}
       {isExpanded && (
         <div className={styles.bssDetails}>
-          <div className={styles.bssField}><strong>Bandwidth:</strong> {bss.bandwidth}</div>
-          <div className={`${styles.bssField} ${styles.fullWidthField}`}><strong>Security:</strong> {bss.security}</div>
-          <div className={styles.bssField}><strong>Last Seen:</strong> {new Date(bss.last_seen).toLocaleTimeString()}</div>
-          {/* Detailed performance metrics for expanded view */}
-          <div className={`${styles.bssField} ${styles.fullWidthField}`}><strong>Channel Utilization:</strong> {bss.channel_utilization_percent !== undefined ? `${bss.channel_utilization_percent.toFixed(1)}%` : 'N/A'}</div>
-          <div className={`${styles.bssField} ${styles.fullWidthField}`}><strong>Total Throughput:</strong> {bss.total_throughput_mbps !== undefined ? `${bss.total_throughput_mbps.toFixed(2)} Mbps` : 'N/A'}</div>
-          
-          {bss.ht_capabilities && (
-            <div className={`${styles.bssField} ${styles.htCaps}`}>
-              <strong>HT Cap: </strong>
-              {bss.ht_capabilities.channel_width_40mhz ? '40MHz, ' : '20MHz, '}
-              {bss.ht_capabilities.short_gi_20mhz ? 'SGI_20 ' : ''}
-              {bss.ht_capabilities.short_gi_40mhz ? 'SGI_40 ' : ''}
-              {/* MCS: {bss.ht_capabilities.supported_mcs_set} */}
+          <div className={styles.bssDetailsGrid}>
+            <div className={styles.bssDetailRow}>
+              <div className={styles.bssDetailLabel}>Bandwidth:</div>
+              <div className={styles.bssDetailValue}>{bss.bandwidth}</div>
             </div>
-          )}
-          {bss.vht_capabilities && (
-            <div className={`${styles.bssField} ${styles.vhtCaps}`}>
-              <strong>VHT Cap: </strong>
-              {bss.vht_capabilities.channel_width_160mhz ? '160MHz, ' : (bss.vht_capabilities.channel_width_80plus80mhz ? '80+80MHz, ' : (bss.vht_capabilities.channel_width_80mhz ? '80MHz, ' : ''))}
-              {bss.vht_capabilities.short_gi_80mhz ? 'SGI_80 ' : ''}
-              {bss.vht_capabilities.short_gi_160mhz ? 'SGI_160 ' : ''}
-              {/* SU Beamformer: {bss.vht_capabilities.su_beamformer_capable ? 'Yes' : 'No'}, MU Beamformer: {bss.vht_capabilities.mu_beamformer_capable ? 'Yes' : 'No'} */}
+            
+            <div className={styles.bssDetailRow}>
+              <div className={styles.bssDetailLabel}>Security:</div>
+              <div className={styles.bssDetailValue}>
+                {bss.security === "WPA2-PSK" ? "WPA2 Personal" :
+                 bss.security === "WPA3-SAE" ? "WPA3 Personal" :
+                 bss.security === "RSN/WPA2/WPA3" ? "WPA2/WPA3 Mixed" :
+                 bss.security === "Open" ? "Open Network" :
+                 bss.security === "WEP" ? "WEP (Insecure)" :
+                 `${bss.security} (Raw Value)`}
+                <span style={{color: 'gray', fontSize: '0.8em', marginLeft: '4px'}}>[{bss.security}]</span>
+              </div>
             </div>
-          )}
+            
+            <div className={styles.bssDetailRow}>
+              <div className={styles.bssDetailLabel}>Ch. Util:</div>
+              <div className={styles.bssDetailValue}>{bss.util !== undefined ? `${bss.util.toFixed(1)}%` : 'N/A'}</div>
+            </div>
+            
+            <div className={styles.bssDetailRow}>
+              <div className={styles.bssDetailLabel}>Throughput:</div>
+              <div className={styles.bssDetailValue}>{bss.thrpt !== undefined ? `${(bss.thrpt/1000000).toFixed(2)} Mbps` : 'N/A'}</div>
+            </div>
+            
+            {/* HT能力 */}
+            {bss.ht_capabilities && (
+              <div className={styles.bssCapabilities}>
+                <strong>HT Capabilities: </strong>
+                {bss.ht_capabilities.channel_width_40mhz ? '40MHz, ' : '20MHz, '}
+                {bss.ht_capabilities.short_gi_20mhz ? 'SGI_20 ' : ''}
+                {bss.ht_capabilities.short_gi_40mhz ? 'SGI_40 ' : ''}
+              </div>
+            )}
+            
+            {/* VHT能力 */}
+            {bss.vht_capabilities && (
+              <div className={styles.bssCapabilities}>
+                <strong>VHT Capabilities: </strong>
+                {bss.vht_capabilities.channel_width_160mhz ? '160MHz, ' : 
+                 (bss.vht_capabilities.channel_width_80plus80mhz ? '80+80MHz, ' : 
+                 (bss.vht_capabilities.channel_width_80mhz ? '80MHz, ' : ''))}
+                {bss.vht_capabilities.short_gi_80mhz ? 'SGI_80 ' : ''}
+                {bss.vht_capabilities.short_gi_160mhz ? 'SGI_160 ' : ''}
+              </div>
+            )}
+          </div>
         </div>
       )}
-    </Card>
+    </div>
   );
 };
 

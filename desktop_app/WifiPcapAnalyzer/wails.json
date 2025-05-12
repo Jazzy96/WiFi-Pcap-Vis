@@ -6,10 +6,10 @@
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
-  "width": 1280,
-  "height": 768,
-  "minwidth": 1024,
-  "minheight": 600,
+  "width": 1920,
+  "height": 1080,
+  "minwidth": 1920,
+  "minheight": 1080,
   "author": {
     "name": "jazzy",
     "email": "jazzy.zheyu@gmail.com"

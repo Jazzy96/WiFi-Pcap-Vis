@@ -8,42 +8,31 @@ import { PerformanceDetailPanel } from './components/PerformanceDetailPanel/Perf
 
 // InnerApp component to access context after DataProvider is set up
 const InnerApp: React.FC = () => {
-  const { isPanelCollapsed, selectedPerformanceTarget } = useAppState(); // Get panel collapse state and selectedPerformanceTarget
+  const { selectedPerformanceTarget } = useAppState(); // 移除 isPanelCollapsed
 
-  // Adjust grid based on whether the performance panel should be shown
+  // 判断是否显示性能面板
   const performancePanelVisible = !!selectedPerformanceTarget;
-  let gridTemplateColumnsValue = '';
-
-  if (isPanelCollapsed) {
-    gridTemplateColumnsValue = performancePanelVisible ? '60px 1.5fr 2fr 2.5fr' : '60px 2fr 3fr';
-  } else {
-    gridTemplateColumnsValue = performancePanelVisible ? 'minmax(240px, 0.6fr) 1.5fr 2fr 2.5fr' : 'minmax(240px, 0.8fr) 2fr 3fr';
-  }
   
-  const mainStyle = {
-    gridTemplateColumns: gridTemplateColumnsValue,
-  };
-
   return (
     <div className="App">
       {/* Header removed based on feedback */}
-      <main className="App-main" style={mainStyle}>
-        <div className={`control-panel-container ${isPanelCollapsed ? 'collapsed' : ''}`}>
+      <main className={`App-main ${!performancePanelVisible ? 'no-performance-panel' : ''}`}>
+        <div className="control-panel-container">
           <ControlPanel />
         </div>
         <div className="bss-list-container">
-            <BssList />
+          <BssList />
+        </div>
+        <div className="sta-list-container-wrapper"> {/* Ensure class name matches App.css */}
+          <StaList /> {/* Render StaList here */}
+        </div>
+        {performancePanelVisible && (
+          <div className="performance-detail-panel-container">
+            <PerformanceDetailPanel />
           </div>
-          <div className="sta-list-container-wrapper"> {/* Ensure class name matches App.css */}
-            <StaList /> {/* Render StaList here */}
-          </div>
-          {performancePanelVisible && (
-            <div className="performance-detail-panel-container">
-              <PerformanceDetailPanel />
-            </div>
-          )}
-        </main>
-      </div>
+        )}
+      </main>
+    </div>
   );
 };
 

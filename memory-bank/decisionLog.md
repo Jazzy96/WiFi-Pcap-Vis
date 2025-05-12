@@ -1,4 +1,24 @@
 ---
+### Decision (Code - STA BitRate Display)
+[2025-05-10 22:34:05] - [Implement STA BitRate parsing and display]
+
+**Rationale:**
+The user requested to display the BitRate of STAs in the UI. This requires modifications across the backend (parsing, state management) and frontend (type definition, UI component).
+
+**Details:**
+*   **Backend (`frame_parser/parser.go`):**
+    *   Added `BitRate float64` to `ParsedFrameInfo` struct ([`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:101`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:101)).
+    *   In `ProcessRow`, parse the `wlan_mgt.fixed.rates.rate` tshark field and assign it to `info.BitRate` ([`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:788`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:788)).
+*   **Backend (`state_manager/models.go`):**
+    *   Added `BitRate float64` to `STAInfo` struct with `json:"bitrate"` tag ([`desktop_app/WifiPcapAnalyzer/state_manager/models.go:60`](desktop_app/WifiPcapAnalyzer/state_manager/models.go:60)).
+*   **Backend (`state_manager/manager.go`):**
+    *   In `ProcessParsedFrame`, within the `handleSTA` function, when a new STA is created or an existing one is updated, set `sta.BitRate = parsedInfo.BitRate` (only if `parsedInfo.BitRate > 0`) ([`desktop_app/WifiPcapAnalyzer/state_manager/manager.go:103`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go:103)).
+*   **Frontend (`frontend/src/types/data.ts`):**
+    *   Added `bitrate?: number;` to the `STA` interface ([`desktop_app/WifiPcapAnalyzer/frontend/src/types/data.ts:25`](desktop_app/WifiPcapAnalyzer/frontend/src/types/data.ts:25)).
+*   **Frontend (`frontend/src/components/StaList/StaList.tsx`):**
+    *   In the `StaCardItem` component, added a `div` to display the `sta.bitrate` similar to other STA details, formatting it to one decimal place and appending " Mbps" ([`desktop_app/WifiPcapAnalyzer/frontend/src/components/StaList/StaList.tsx:33`](desktop_app/WifiPcapAnalyzer/frontend/src/components/StaList/StaList.tsx:33)).
+*   **Expected Outcome:** The application will now parse, store, transmit via WebSocket, and display the BitRate for STAs on the frontend UI.
+---
 ### Decision (Debug - Parser Robustness)
 [2025-05-10 17:19:00] - [Enhance `parser.go` to be more tolerant of empty/malformed non-critical fields]
 
@@ -53,6 +73,24 @@ Based on `tshark` error logs and `tshark_beacon_example.json`, several fields in
     *   Removed `wlan.he.phy.channel_width_set` (caused error, specific subfields exist in example, or can be inferred).
 *   **Impact:** These changes are expected to resolve `tshark` startup errors related to invalid fields, allowing the packet parsing process to proceed. This prioritizes getting the core parsing pipeline functional.
 # Decision Log
+---
+### Decision (Logging Library Migration and Frontend Build Optimization)
+[2025-05-10 19:54:00] - [Migrate to zerolog in Go backend and optimize frontend build]
+
+**Rationale:**
+To improve logging efficiency and maintainability in the Go backend, and to optimize the frontend build for production, the following changes were made.
+
+**Details:**
+*   **Go Backend:**
+    *   Removed temporary `fmt.Println()` and `log.Println()` statements.
+    *   Added `github.com/rs/zerolog` dependency in `go.mod`.
+    *   Verified the existence of required logging configuration structure in `config.go` and `config.json`.
+    *   Verified the existence of `zerolog` initialization logic in `main.go` and `logger.go`.
+    *   Replaced existing `log.Printf` with `zerolog` usage (e.g., `logger.Log.Info().Msgf(...)`) throughout the Go backend code.
+    *   Resolved compilation errors and import cycle issues when importing the `logger` package.
+*   **TypeScript Frontend:**
+    *   No `console.log()`, `console.debug()`, `console.info()` statements were found to be removed after review.
+    *   Updated `vite.config.ts` to remove `console` and `debugger` calls in production builds.
 
 ---
 ### Decision (Debug - tshark Stream Handling)
@@ -667,3 +705,113 @@ The `tshark` process was failing to start due to invalid field names in its comm
     *   `radiotap.vht.nss` (kept as is, likely valid but data might not always be present)
     *   `radiotap.vht.mcs` (kept as is, likely valid but data might not always be present)
 *   **Impact:** These changes are expected to resolve the `tshark` startup errors related to invalid fields, allowing the packet parsing process to proceed correctly. This ensures that all required information for downstream analysis (like HE/VHT parameters, retry flags) can be extracted if present in the capture.
+---
+### Decision (Debug - Security Information Parsing)
+[2025-05-10 19:59:00] - [Implement Security Information Parsing in parser.go]
+
+**Rationale:**
+The UI was not displaying Security information correctly. The `ParsedFrameInfo` struct lacked a field for storing Security information, and the `ProcessRow` function did not parse Security information from the tshark output.
+
+**Details:**
+*   **Affected Files:**
+    *   [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go)
+*   **Changes Made:**
+    1.  Added `Security string` field to `ParsedFrameInfo` struct.
+    2.  Modified `ProcessRow` function to determine security type based on `wlan.rsn.akms.type` and `wlan.fixed.capabilities.privacy` fields, and assign the result to the `Security` field.
+*   **Expected Outcome:**
+    The UI will now display Security information correctly.
+---
+### Decision (Architecture - Overall Architecture Design)
+[2025-05-10 20:30:00] - [Design the overall architecture of the project]
+
+**Rationale:**
+To address UI display issues (window size, static indicator errors) and dynamic indicator missing issues, a clear, modular architecture design is required, with full consideration of scalability and maintainability.
+
+**Implications/Details:**
+*   **Distributed Architecture:**
+    *   **Router-Side Capture Agent:** Responsible for capturing 802.11 air interface data on the router and transmitting raw frame data to the PC-Side Analysis Engine in real time.
+    *   **PC-Side Real-time Analysis Engine:** Responsible for receiving data streams from the router, parsing 802.11 frames at high speed, maintaining the association status of BSS and STA, extracting key information, and pushing the processed structured data to the Web Frontend via WebSocket.
+    *   **Web Frontend Visualization UI:** Responsible for displaying BSS, STA, their associations, and basic information in a user-friendly way in the browser, supporting real-time updates and user control command sending.
+*   **Data Flow:** Router (raw frames) -> gRPC -> PC Engine (parsing, state management) -> WebSocket -> Web Frontend (visualization).
+*   **Control Flow:** Web Frontend (user commands) -> WebSocket -> PC Engine -> gRPC -> Router Agent (execute operations).
+*   **Focus on UI Issues:**
+    *   **Web Frontend:**
+        *   **Window Size:** Ensure the Web Frontend displays correctly at different window sizes, avoiding content being squeezed or overflowing.
+        *   **Static Indicator Errors:** Check that the Web Frontend correctly receives and displays static indicators from the PC-Side Analysis Engine, such as BSSID, SSID, channel, and security type.
+        *   **Dynamic Indicator Missing:** Ensure the Web Frontend can receive and display dynamic indicators from the PC-Side Analysis Engine in real time, such as channel utilization and throughput.
+    *   **PC-Side Analysis Engine:**
+        *   **Data Parsing:** Ensure the PC-Side Analysis Engine can correctly parse 802.11 frames and extract the required static and dynamic indicators.
+        *   **Data Processing:** Ensure the PC-Side Analysis Engine can correctly process the parsed data and calculate accurate dynamic indicators.
+        *   **Data Push:** Ensure the PC-Side Analysis Engine can push the processed data to the Web Frontend in real time.
+    *   **Router-Side Capture Agent:**
+        *   **Data Capture:** Ensure the Router-Side Capture Agent can correctly capture 802.11 air interface data and transmit raw frame data to the PC-Side Analysis Engine in real time.
+*   **Module Relationships:**
+    *   The Router-Side Capture Agent sends raw frame data to the PC-Side Analysis Engine via gRPC.
+    *   The PC-Side Analysis Engine parses the raw frame data, extracts static and dynamic indicators, and pushes the processed data to the Web Frontend via WebSocket.
+    *   The Web Frontend receives data from the PC-Side Analysis Engine and displays BSS, STA, their associations, and basic information in a user-friendly way.
+    *   The Web Frontend can send control commands to the PC-Side Analysis Engine via WebSocket, such as starting/stopping capture and setting the channel.
+    *   The PC-Side Analysis Engine receives control commands from the Web Frontend and forwards the commands to the Router-Side Capture Agent via gRPC.
+
+---
+### Decision (Architecture - Technology Selection)
+[2025-05-10 20:30:00] - [Select technology for data transmission and communication]
+
+**Rationale:**
+To ensure efficient and reliable data transmission and communication between different modules.
+
+**Implications/Details:**
+*   **gRPC:** Use gRPC as the data transmission protocol between the Router-Side Capture Agent and the PC-Side Analysis Engine. Reason: efficiency, cross-language, strong type, performance.
+*   **WebSocket:** Use WebSocket as the data transmission protocol between the PC-Side Analysis Engine and the Web Frontend. Reason: real-time, two-way communication, wide compatibility.
+
+---
+### Decision (Architecture - Component Design)
+[2025-05-10 20:30:00] - [Design component architecture]
+
+**Rationale:**
+To ensure scalability and maintainability of the system.
+
+**Implications/Details:**
+*   **Distributed Architecture:** Adopt a distributed architecture and split the system into three core components. Reason: real-time requirements, scalability, independent component development and deployment.
+*   **Microservices (Consideration):** Consider splitting the PC-Side Analysis Engine into smaller microservices in the future. Reason: improve maintainability and independent scalability.
+---
+### Decision (Code)
+[2025-05-10 20:31:00] - 修改 BssList.tsx 和 data.ts，以正确显示 Security 和 HT/VHT Cap 信息
+
+**Rationale:**
+UI 界面上 BSS 的 Security (加密类型) 和 HT/VHT Cap (HT/VHT 能力) 信息显示错误，需要修改前端代码以正确显示。
+
+**Details:**
+- 修改 src/types/data.ts，定义 HTCabilities 和 VHTCabilities 接口。
+- 修改 BssList.tsx，根据 security 字段的值显示更友好的 Security 信息。
+- 修改 BssList.tsx，根据 ht_capabilities 和 vht_capabilities 字段的属性来显示 HT/VHT Cap 信息。
+---
+### Decision (Code)
+[2025-05-10 22:35:05] - 修改 wails.json 文件，设置窗口的默认高度为 720 像素。
+
+**Rationale:**
+根据用户要求，将窗口的默认高度设置为 720 像素，以满足用户对窗口大小的偏好。
+
+**Details:**
+File: desktop_app/WifiPcapAnalyzer/wails.json
+```json
+{
+  "width": 1280,
+  "height": 720,
+}
+```
+---
+### Decision (Code - Wails Window Size Configuration)
+[2025-05-11 00:33:56] - [Resolve Wails window size override and update default size]
+
+**Rationale:**
+The application's initial window size was hardcoded in `main.go`, overriding settings in `wails.json`. The user requested to remove this override and set the default window size in `wails.json` to 1920x1080.
+
+**Details:**
+*   **File:** [`desktop_app/WifiPcapAnalyzer/main.go`](desktop_app/WifiPcapAnalyzer/main.go)
+    *   Removed the `Width: 1024` and `Height: 768` parameters from the `options.App` struct within the `wails.Run()` call. This allows `wails.json` to control the initial window size.
+*   **File:** [`desktop_app/WifiPcapAnalyzer/wails.json`](desktop_app/WifiPcapAnalyzer/wails.json)
+    *   Set `"width": 1920`
+    *   Set `"height": 1080`
+    *   Set `"minwidth": 1920` (to match the new width)
+    *   Set `"minheight": 1080` (to match the new height)
+*   **Expected Outcome:** The Wails application will now start with a default window size of 1920x1080, as defined in `wails.json`, and the hardcoded override in `main.go` will no longer interfere.

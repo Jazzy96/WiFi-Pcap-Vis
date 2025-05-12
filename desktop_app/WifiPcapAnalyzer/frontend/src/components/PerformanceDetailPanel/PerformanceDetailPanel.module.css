@@ -1,20 +1,19 @@
 .panel {
-  padding: 15px;
-  background-color: var(--color-background-secondary); /* Assuming you have CSS variables for colors */
-  border-radius: var(--border-radius-medium);
-  box-shadow: var(--shadow-light);
+  font-family: var(--font-primary);
+  color: var(--text-color-primary-on-light);
   height: 100%;
-  overflow-y: auto;
-  color: var(--color-text-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .panelTitle {
-  font-size: 1.4em;
+  font-size: 1.2rem;
   font-weight: 600;
-  margin-bottom: 15px;
-  color: var(--color-text-primary);
-  border-bottom: 1px solid var(--color-border);
-  padding-bottom: 10px;
+  color: var(--text-color-primary-on-light);
+  margin: 0 0 8px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
 }
 
 .noSelection {
@@ -23,48 +22,128 @@
   align-items: center;
   height: 100%;
   font-style: italic;
-  color: var(--color-text-secondary);
+  color: var(--text-color-secondary-on-light);
+  font-size: 0.9rem;
+}
+
+/* 指标信息网格布局 */
+.infoSection {
+  background-color: var(--color-misty-white);
+  border-radius: 4px;
+  margin-bottom: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 15%, transparent);
+  padding: 10px;
+}
+
+.infoHeader {
+  font-weight: 600;
+  color: var(--color-tech-blue);
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
+  padding-bottom: 4px;
 }
 
 .metricsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 15px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 15px;
 }
 
 .metricItem {
-  background-color: var(--color-background-card);
-  padding: 10px 15px;
-  border-radius: var(--border-radius-small);
-  box-shadow: var(--shadow-extra-light);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .metricLabel {
   font-weight: 500;
-  color: var(--color-text-secondary);
-  margin-bottom: 5px;
-  font-size: 0.9em;
+  color: var(--text-color-primary-on-light);
+  font-size: 0.8rem;
+  margin-bottom: 2px;
 }
 
 .metricValue {
-  font-size: 1.2em;
-  font-weight: 600;
-  color: var(--color-accent-blue); /* Or var(--color-text-emphasis) */
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-color-secondary-on-light);
 }
 
-.chartContainer {
-  margin-top: 20px;
-  margin-bottom: 20px;
-  padding: 15px;
-  background-color: var(--color-background-card);
-  border-radius: var(--border-radius-small);
-  box-shadow: var(--shadow-extra-light);
+.metricValue.highlight {
+  color: var(--color-tech-blue);
 }
+
+/* 详细特性表格 */
+.detailsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-bottom: 15px;
+}
+
+.detailsTable th {
+  text-align: left;
+  padding: 6px 8px;
+  background-color: color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
+  font-weight: 500;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
+}
+
+.detailsTable td {
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
+}
+
+.detailsTable tr:last-child td {
+  border-bottom: none;
+}
+
+/* 图表容器 */
+.chartContainer {
+  margin-bottom: 15px;
+  overflow: hidden;
+  padding: 12px;
+  border-radius: 4px;
+  background-color: white;
+  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
+}
+
+/* 全宽模式下的图表容器 - Not needed anymore as all charts are same width */
+/* .chartGridFullWidth .chartContainer {
+  margin-bottom: 20px;
+  padding: 12px;
+} */
 
 .chartTitle {
-  font-size: 1.1em;
+  font-size: 0.95rem;
   font-weight: 500;
-  margin-bottom: 10px;
-  color: var(--color-text-primary);
+  margin-bottom: 8px;
+  color: var(--text-color-primary-on-light);
+}
+
+.chartGrid {
+  display: grid;
+  grid-template-columns: 1fr; /* Always use single column layout */
+  gap: 20px;
+  margin-bottom: 15px;
+}
+
+/* 滚动容器 */
+.scrollContainer {
+  overflow-y: auto;
+  flex-grow: 1;
+}
+
+/* 适配小屏幕 */
+@media (max-width: 950px) {
+  .metricsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .metricsGrid {
+    grid-template-columns: 1fr;
+  }
 }

@@ -3,28 +3,39 @@ package config
 import (
 	"encoding/json"
 	"io/ioutil"
-	"log"
+	"log" // Standard log is used here as zerolog is not yet initialized
 	"os"
 )
 
 // AppConfig holds the application configuration.
 type AppConfig struct {
-	GRPCServerAddress  string `json:"grpc_server_address"`
-	WebSocketAddress   string `json:"websocket_address"`
-	LogFile            string `json:"log_file"`
-	LogLevel           string `json:"log_level"`
-	MinBSSCreationRSSI int    `json:"min_bss_creation_rssi"`
-	TsharkPath         string `json:"tshark_path"` // Path to tshark executable
+	GRPCServerAddress  string         `json:"grpc_server_address"`
+	WebSocketAddress   string         `json:"websocket_address"`
+	LogFile            string         `json:"log_file"`  // Deprecated by LoggingConfig
+	LogLevel           string         `json:"log_level"` // Deprecated by LoggingConfig
+	MinBSSCreationRSSI int            `json:"min_bss_creation_rssi"`
+	TsharkPath         string         `json:"tshark_path"` // Path to tshark executable
+	Logging            *LoggingConfig `json:"logging,omitempty"`
+}
+
+// LoggingConfig holds the logging configuration.
+type LoggingConfig struct {
+	Level   string  `json:"level"`             // e.g., "debug", "info", "warn", "error"
+	File    *string `json:"file,omitempty"`    // Optional: path to log file
+	Console *bool   `json:"console,omitempty"` // Optional: enable/disable console logging
 }
 
 // DefaultConfig provides a default configuration.
 var DefaultConfig = AppConfig{
 	GRPCServerAddress:  "192.168.110.1:50051", // Default gRPC server address
 	WebSocketAddress:   "0.0.0.0:8080",        // Default WebSocket server address
-	LogFile:            "pc_analyzer.log",     // Default log file
-	LogLevel:           "info",                // Default log level (e.g., debug, info, warn, error)
 	MinBSSCreationRSSI: -84,                   // Default minimum RSSI for BSS creation
 	TsharkPath:         "tshark",              // Default tshark path (assumes it's in PATH)
+	Logging: &LoggingConfig{
+		Level:   "info",
+		Console: func(b bool) *bool { return &b }(true), // Default console to true
+		File:    nil,                                    // Default no file logging
+	},
 }
 
 // GlobalConfig holds the global application configuration.
@@ -39,7 +50,7 @@ var GlobalConfig AppConfig
 func LoadConfig(filePath string) AppConfig {
 	var cfg AppConfig
 	if filePath == "" {
-		log.Println("No configuration file path provided, using default configuration.")
+		// log.Println("No configuration file path provided, using default configuration.")
 		cfg = DefaultConfig
 	} else {
 		log.Printf("Attempting to load configuration from: %s\n", filePath)
@@ -84,6 +95,35 @@ func LoadConfig(filePath string) AppConfig {
 	if cfg.TsharkPath == "" {
 		cfg.TsharkPath = DefaultConfig.TsharkPath
 		log.Printf("TsharkPath not found in config, using default value: %s\n", DefaultConfig.TsharkPath)
+	}
+	if cfg.Logging == nil {
+		cfg.Logging = DefaultConfig.Logging
+		// log.Println("Logging configuration not found, using default logging settings.")
+	} else {
+		if cfg.Logging.Level == "" {
+			cfg.Logging.Level = DefaultConfig.Logging.Level
+		}
+		if cfg.Logging.Console == nil {
+			cfg.Logging.Console = DefaultConfig.Logging.Console
+		}
+		// File can be nil by default, so no specific default fill needed if it's missing, unless we want to force a default file path.
+	}
+	// Deprecate old LogFile and LogLevel if new Logging is present
+	if cfg.Logging != nil {
+		if cfg.LogFile != "" {
+			log.Printf("Warning: Deprecated 'log_file' field ('%s') found in config. Please use 'logging.file' instead.", cfg.LogFile)
+			// Optionally, migrate if new file logging is not set:
+			// if cfg.Logging.File == nil || *cfg.Logging.File == "" {
+			//  cfg.Logging.File = &cfg.LogFile
+			// }
+		}
+		if cfg.LogLevel != "" {
+			log.Printf("Warning: Deprecated 'log_level' field ('%s') found in config. Please use 'logging.level' instead.", cfg.LogLevel)
+			// Optionally, migrate if new level is not set:
+			// if cfg.Logging.Level == "" {
+			// 	cfg.Logging.Level = cfg.LogLevel
+			// }
+		}
 	}
 
 	GlobalConfig = cfg // Set the global config

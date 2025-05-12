@@ -1,3 +1,9 @@
+* [2025-05-12 14:25:00] - **完成background.md文档编写:** 创建了详细的项目背景文档，全面覆盖了项目整体背景和目标、系统架构概述、各个子模块的详细实现、模块交互方式、关键数据流程图以及开发和调试指南。文档总共约700行，结构清晰，内容全面，满足工程师快速上手开发和调试的需求。
+* [2025-05-12 14:20:00] - **开始编写background.md文档:** 创建一个详细介绍WiFi Pcap分析项目背景及各个子模块实现的文档，使工程师阅读后能直接着手开发和调试。将从memory-bank中的productContext.md、developmentContext下的文档以及其他资源中提取信息，覆盖项目整体背景、系统架构、各子模块详细实现、交互方式、关键数据结构以及开发调试指南。
+*   [2025-05-10 22:33:50] - **完成STA BitRate功能:**
+    *   已修改后端 `frame_parser/parser.go` ([`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:101), [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:788`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go:788)) 以解析 BitRate。
+    *   已修改后端 `state_manager/models.go` ([`desktop_app/WifiPcapAnalyzer/state_manager/models.go:60`](desktop_app/WifiPcapAnalyzer/state_manager/models.go:60)) 和 `state_manager/manager.go` ([`desktop_app/WifiPcapAnalyzer/state_manager/manager.go:103`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go:103)) 以存储和更新 BitRate。
+    *   已修改前端 `frontend/src/types/data.ts` ([`desktop_app/WifiPcapAnalyzer/frontend/src/types/data.ts:25`](desktop_app/WifiPcapAnalyzer/frontend/src/types/data.ts:25)) 和 `frontend/src/components/StaList/StaList.tsx` ([`desktop_app/WifiPcapAnalyzer/frontend/src/components/StaList/StaList.tsx:33`](desktop_app/WifiPcapAnalyzer/frontend/src/components/StaList/StaList.tsx:33)) 以显示 BitRate。
 *   [2025-05-10 17:58:19] - **调试UI无数据显示 (添加日志):** 在 [`desktop_app/WifiPcapAnalyzer/state_manager/manager.go`](desktop_app/WifiPcapAnalyzer/state_manager/manager.go) 和 [`desktop_app/WifiPcapAnalyzer/app.go`](desktop_app/WifiPcapAnalyzer/app.go) 中添加了详细日志，以追踪BSS更新和状态快照事件的发送。等待用户提供新的日志进行分析。
 *   [2025-05-10 17:19:00] - **调试前端无数据显示问题 (解析器增强):**
     *   修改了 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) 中的 `ProcessRow` 函数，以更宽松地处理某些非关键字段（如 `radiotap.channel.freq`, `radiotap.dbm_antsignal`, `wlan.duration`）的解析错误。如果这些字段的值存在但无法解析，将记录错误但不会导致整个帧被丢弃。
@@ -194,3 +200,19 @@ This file tracks the project's progress using a task list format.
     *   当 `packet.ErrorLayer()` 返回错误或 `Dot11` 层无法解析时，现在会返回错误，阻止这些数据包被进一步处理。
     *   `gopacket.NewPacket` 调用已更改为使用 `gopacket.Lazy` 解码选项。
     *   此更改旨在提高解析器在遇到损坏或异常数据包时的健壮性，并减少因解析失败导致的下游指标计算问题。
+*   [2025-05-10 19:59:00] - **解析 Security 信息:**
+    *   修改了 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) 文件，以正确解析 Security 信息。
+    *   在 `ParsedFrameInfo` 结构中添加了 `Security string` 字段。
+    *   在 `ProcessRow` 函数中，根据 `wlan.rsn.akms.type` 和 `wlan.fixed.capabilities.privacy` 字段确定 Security 类型，并将结果赋值给 `Security` 字段。
+    *   Memory Bank (`decisionLog.md`) 已更新。
+*   [2025-05-10 19:59:00] - **解析 Security 信息:**
+    *   修改了 [`desktop_app/WifiPcapAnalyzer/frame_parser/parser.go`](desktop_app/WifiPcapAnalyzer/frame_parser/parser.go) 文件，以正确解析 Security 信息。
+    *   在 `ParsedFrameInfo` 结构中添加了 `Security string` 字段。
+    *   在 `ProcessRow` 函数中，根据 `wlan.rsn.akms.type` 和 `wlan.fixed.capabilities.privacy` 字段确定 Security 类型，并将结果赋值给 `Security` 字段。
+    *   Memory Bank (`decisionLog.md`) 已更新。
+* [2025-05-10 20:31:00] - 完成修改 BssList.tsx 和 data.ts，以正确显示 Security 和 HT/VHT Cap 信息的任务
+[2025-05-10 22:36:10] - 生成项目文档，包括用户手册、开发文档等，重点关注 UI 界面显示和动态指标计算的实现细节。文档保存在 `documentation.md` 文件中。
+* [2025-05-11 00:34:37] - **完成 - Wails 窗口大小问题:**
+    *   已移除 [`desktop_app/WifiPcapAnalyzer/main.go`](desktop_app/WifiPcapAnalyzer/main.go) 中的窗口大小硬编码。
+    *   已更新 [`desktop_app/WifiPcapAnalyzer/wails.json`](desktop_app/WifiPcapAnalyzer/wails.json) 将默认窗口尺寸设置为 1920x1080。
+    *   Memory Bank (`decisionLog.md`, `activeContext.md`) 已更新。
