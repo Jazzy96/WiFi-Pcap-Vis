@@ -3,7 +3,7 @@ import styles from './Button.module.css';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
-  variant?: 'primary' | 'secondary' | 'none';
+  variant?: 'primary' | 'secondary' | 'none' | 'danger';
   // Add other props like 'size', 'iconOnly', etc. as needed
 }
 

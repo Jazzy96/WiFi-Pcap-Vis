@@ -1,10 +1,9 @@
 {
-  "grpc_server_address": "192.168.110.1:50051",
+  "grpc_server_address": "192.168.6.171:50051",
   "websocket_address": "0.0.0.0:8080",
   "log_file": "pc_analyzer.log",
   "log_level": "info",
   "min_bss_creation_rssi": -84,
-  "tshark_path": "tshark",
   "logging": {
   	"level": "info",
   	"console": true,

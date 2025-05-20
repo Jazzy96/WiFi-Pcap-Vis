@@ -3,19 +3,30 @@ package frame_parser
 import (
 	"WifiPcapAnalyzer/logger"
 	"WifiPcapAnalyzer/utils"
-	"bufio"
-	"encoding/csv"
-	"encoding/hex"
-	"fmt"
-	"io"
-	"net"
-	"os/exec"
-	"strconv"
 	"strings"
+
+	// "encoding/csv" // No longer needed after CSVParser removal
+	// "encoding/hex" // No longer needed
+	"fmt"
+	// "io" // No longer needed
+	"net"
+	// "os/exec" // No longer needed after TSharkExecutor removal
+	// "strconv" // No longer needed
+	// "strings" // No longer needed
 	"time"
 	"unicode/utf8"
-	// "github.com/google/gopacket/layers" // No longer directly used for parsing
+
+	"encoding/binary"
+
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
 )
+
+// GoPacketParser will use gopacket to parse 802.11 frames.
+type GoPacketParser struct {
+	// Potentially add fieldsNil here if needed later, e.g., options or a reusable packet source.
+}
 
 // HTCapabilityInfo stores parsed HT capabilities.
 type HTCapabilityInfo struct {
@@ -25,6 +36,7 @@ type HTCapabilityInfo struct {
 	SupportedMCSSet        []byte `json:"supported_mcs_set"` // Raw 16 bytes
 	PrimaryChannel         uint8  `json:"primary_channel"`
 	SecondaryChannelOffset string `json:"secondary_channel_offset"`
+	OperatingAt40MHz       bool   `json:"operating_at_40mhz"`
 	// Additional fields from tshark
 	LDPCCoding         bool   `json:"ldpc_coding"`
 	FortyMhzIntolerant bool   `json:"40mhz_intolerant"`
@@ -94,7 +106,6 @@ type HECapabilityInfo struct {
 }
 
 // ParsedFrameInfo holds extracted information from a single 802.11 frame.
-// Fields are now populated from tshark output.
 type ParsedFrameInfo struct {
 	Timestamp              time.Time
 	FrameType              string // e.g., "Beacon", "ProbeResp", "Data", "QoSData" (derived from wlan.fc.type_subtype)
@@ -144,1569 +155,979 @@ type ParsedFrameInfo struct {
 	BitRate            float64 // STA BitRate
 
 	// Raw tshark fields for debugging or further processing if needed
+	// This field might be removed or re-purposed if not used by gopacket direct parsing.
 	RawFields map[string]string
 }
 
 // PacketInfoHandler is a function that processes parsed frame information.
 type PacketInfoHandler func(info *ParsedFrameInfo)
 
-// TSharkExecutor manages the tshark process.
-type TSharkExecutor struct {
-	cmd *exec.Cmd
-}
+// ProcessPacketSource is the main entry point for parsing pcap data
+// from a gopacket.PacketDataSource.
+func ProcessPacketSource(packetSource *gopacket.PacketSource, pktHandler PacketInfoHandler) error {
+	parser := &GoPacketParser{}
+	frameCount := 0
+	errorCount := 0
 
-// Start launches the tshark process.
-func (tse *TSharkExecutor) Start(pcapFilePath string, tsharkPath string, fields []string) (io.ReadCloser, io.ReadCloser, error) {
-	if tsharkPath == "" {
-		tsharkPath = "tshark" // Default to tshark in PATH
-	}
-	args := []string{
-		"-r", pcapFilePath,
-		"-T", "fields",
-		"-E", "header=y",
-		"-E", "separator=,",
-		"-E", "quote=d",
-		"-E", "occurrence=a", // Get all occurrences for multi-value fields
-	}
-	for _, field := range fields {
-		args = append(args, "-e", field)
-	}
+	logger.Log.Info().Msg("INFO_PCAP_PROCESS: Starting packet processing from gopacket.PacketSource")
 
-	logger.Log.Info().Msgf("INFO_TSHARK_EXEC: Starting tshark with command: %s %s", tsharkPath, strings.Join(args, " "))
-	tse.cmd = exec.Command(tsharkPath, args...)
-
-	stdout, err := tse.cmd.StdoutPipe()
-	if err != nil {
-		logger.Log.Error().Err(err).Msgf("ERROR_TSHARK_EXEC: Failed to get stdout pipe")
-		return nil, nil, err
-	}
-	stderr, err := tse.cmd.StderrPipe()
-	if err != nil {
-		logger.Log.Error().Err(err).Msgf("ERROR_TSHARK_EXEC: Failed to get stderr pipe")
-		return nil, nil, err
-	}
-
-	if err := tse.cmd.Start(); err != nil {
-		logger.Log.Error().Err(err).Msgf("ERROR_TSHARK_EXEC: Failed to start tshark")
-		return nil, nil, err
-	}
-	logger.Log.Info().Msgf("INFO_TSHARK_EXEC: tshark process started (PID: %d)", tse.cmd.Process.Pid)
-	return stdout, stderr, nil
-}
-
-// StartStream launches the tshark process with input from an io.Reader.
-func (tse *TSharkExecutor) StartStream(pcapStream io.Reader, tsharkPath string, fields []string) (io.ReadCloser, io.ReadCloser, error) {
-	if tsharkPath == "" {
-		tsharkPath = "tshark" // Default to tshark in PATH
-	}
-	args := []string{
-		"-r", "-", // Read from stdin
-		"-T", "fields",
-		"-E", "header=y",
-		"-E", "separator=,",
-		"-E", "quote=d",
-		"-E", "occurrence=a",
-	}
-	for _, field := range fields {
-		args = append(args, "-e", field)
-	}
-
-	logger.Log.Info().Msgf("INFO_TSHARK_EXEC: Starting tshark with command (streaming): %s %s", tsharkPath, strings.Join(args, " "))
-	tse.cmd = exec.Command(tsharkPath, args...)
-	tse.cmd.Stdin = pcapStream // Set stdin to the provided stream
-
-	stdout, err := tse.cmd.StdoutPipe()
-	if err != nil {
-		logger.Log.Error().Err(err).Msgf("ERROR_TSHARK_EXEC: Failed to get stdout pipe (streaming)")
-		return nil, nil, err
-	}
-	stderr, err := tse.cmd.StderrPipe()
-	if err != nil {
-		logger.Log.Error().Err(err).Msgf("ERROR_TSHARK_EXEC: Failed to get stderr pipe (streaming)")
-		return nil, nil, err
-	}
-
-	if err := tse.cmd.Start(); err != nil {
-		logger.Log.Error().Err(err).Msgf("ERROR_TSHARK_EXEC: Failed to start tshark (streaming)")
-		return nil, nil, err
-	}
-	logger.Log.Info().Msgf("INFO_TSHARK_EXEC: tshark process started (streaming) (PID: %d)", tse.cmd.Process.Pid)
-	return stdout, stderr, nil
-}
-
-// Stop terminates the tshark process.
-func (tse *TSharkExecutor) Stop() {
-	if tse.cmd != nil && tse.cmd.Process != nil {
-		logger.Log.Info().Msgf("INFO_TSHARK_EXEC: Stopping tshark process (PID: %d)", tse.cmd.Process.Pid)
-		if err := tse.cmd.Process.Kill(); err != nil {
-			logger.Log.Error().Err(err).Msgf("ERROR_TSHARK_EXEC: Failed to kill tshark process")
+	for packet := range packetSource.Packets() {
+		if packet == nil {
+			logger.Log.Warn().Msg("WARN_PCAP_PROCESS: Nil packet received from source, stopping.")
+			break // End of stream or error
 		}
-		tse.cmd.Wait() // Wait for the command to exit and release resources
-		logger.Log.Info().Msgf("INFO_TSHARK_EXEC: tshark process stopped.")
-	}
-}
+		frameCount++
 
-// CSVParser parses CSV data from tshark.
-type CSVParser struct {
-	reader     *csv.Reader
-	HeaderMap  map[string]int
-	HeaderList []string
-}
+		// Log basic packet metadata
+		// logger.Log.Debug().
+		// 	Int("frameNum", frameCount).
+		// 	Time("timestamp", packet.Metadata().Timestamp).
+		// 	Int("length", packet.Metadata().Length).
+		// 	Msg("Processing packet")
 
-// NewCSVParser creates a new CSV parser.
-func NewCSVParser(r io.Reader) (*CSVParser, error) {
-	csvReader := csv.NewReader(r)
-	header, err := csvReader.Read()
-	if err != nil {
-		logger.Log.Error().Err(err).Msgf("ERROR_CSV_PARSE: Failed to read CSV header")
-		return nil, err
-	}
+		parsedInfo, err := parser.ParsePacket(packet)
+		if err != nil {
+			errorCount++
+			// Log more detailed error, including packet dump if small enough or relevant parts
+			// logger.Log.Warn().Err(err).Int("frameNum", frameCount).Msg("Error parsing packet")
 
-	headerMap := make(map[string]int)
-	for i, colName := range header {
-		headerMap[colName] = i
-	}
-	logger.Log.Info().Msgf("INFO_CSV_PARSE: CSV Header parsed: %v", header)
-	return &CSVParser{reader: csvReader, HeaderMap: headerMap, HeaderList: header}, nil
-}
+			// Consider logging a snippet of the packet data for debugging difficult cases.
+			// Example: logger.Log.Debug().Str("packet_data_snippet", hex.EncodeToString(packet.Data()[:min(32, len(packet.Data()))])).Msg("Packet data snippet on error")
 
-// ReadFrame reads a single CSV row (frame).
-func (p *CSVParser) ReadFrame() (map[string]string, error) {
-	record, err := p.reader.Read()
-	if err != nil {
-		if err == io.EOF {
-			return nil, io.EOF
+			// Continue processing other packets
+			continue
 		}
-		logger.Log.Error().Err(err).Msgf("ERROR_CSV_PARSE: Failed to read CSV row")
-		return nil, err
-	}
 
-	frameData := make(map[string]string)
-	for fieldName, index := range p.HeaderMap {
-		if index < len(record) {
-			frameData[fieldName] = record[index]
-		} else {
-			frameData[fieldName] = "" // Field not present in this row
-		}
-	}
-	return frameData, nil
-}
-
-// FrameProcessor converts CSV rows to ParsedFrameInfo.
-type FrameProcessor struct {
-	headerMap map[string]int
-}
-
-// NewFrameProcessor creates a new frame processor.
-func NewFrameProcessor(headerMap map[string]int) *FrameProcessor {
-	return &FrameProcessor{headerMap: headerMap}
-}
-
-// Helper functions for safe field extraction and conversion
-func getString(row map[string]string, fieldName string) string {
-	return row[fieldName]
-}
-
-func getInt(row map[string]string, fieldName string) (int, error) {
-	valStr := strings.TrimSpace(row[fieldName])
-	if valStr == "" {
-		return 0, fmt.Errorf("field %s is empty", fieldName)
-	}
-	// Handle multiple values if present (e.g., from -E occurrence=a)
-	// For simplicity, take the first one if multiple are comma-separated.
-	// A more robust solution might involve specific logic per field.
-	if strings.Contains(valStr, ",") {
-		valStr = strings.Split(valStr, ",")[0]
-	}
-	val, err := strconv.Atoi(valStr)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse int for field %s, value '%s': %w", fieldName, valStr, err)
-	}
-	return val, nil
-}
-
-func getUint8(row map[string]string, fieldName string) (uint8, error) {
-	valStr := strings.TrimSpace(row[fieldName])
-	if valStr == "" {
-		return 0, fmt.Errorf("field %s is empty", fieldName)
-	}
-	if strings.Contains(valStr, ",") {
-		valStr = strings.Split(valStr, ",")[0]
-	}
-	val, err := strconv.ParseUint(valStr, 10, 8)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse uint8 for field %s, value '%s': %w", fieldName, valStr, err)
-	}
-	return uint8(val), nil
-}
-
-func getUint16(row map[string]string, fieldName string) (uint16, error) {
-	valStr := strings.TrimSpace(row[fieldName])
-	if valStr == "" {
-		return 0, fmt.Errorf("field %s is empty", fieldName)
-	}
-	if strings.Contains(valStr, ",") {
-		valStr = strings.Split(valStr, ",")[0]
-	}
-	val, err := strconv.ParseUint(valStr, 10, 16)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse uint16 for field %s, value '%s': %w", fieldName, valStr, err)
-	}
-	return uint16(val), nil
-}
-
-func getFloat64(row map[string]string, fieldName string) (float64, error) {
-	valStr := strings.TrimSpace(row[fieldName])
-	if valStr == "" {
-		return 0, fmt.Errorf("field %s is empty", fieldName)
-	}
-	if strings.Contains(valStr, ",") {
-		valStr = strings.Split(valStr, ",")[0]
-	}
-	val, err := strconv.ParseFloat(valStr, 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse float64 for field %s, value '%s': %w", fieldName, valStr, err)
-	}
-	return val, nil
-}
-
-func getUint32(row map[string]string, fieldName string) (uint32, error) {
-	valStr := strings.TrimSpace(row[fieldName])
-	if valStr == "" {
-		return 0, fmt.Errorf("field %s is empty", fieldName)
-	}
-	if strings.Contains(valStr, ",") {
-		valStr = strings.Split(valStr, ",")[0]
-	}
-	val, err := strconv.ParseUint(valStr, 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse uint32 for field %s, value '%s': %w", fieldName, valStr, err)
-	}
-	return uint32(val), nil
-}
-
-func getMAC(row map[string]string, fieldName string) (net.HardwareAddr, error) {
-	valStr := strings.TrimSpace(row[fieldName])
-	if valStr == "" {
-		return nil, fmt.Errorf("field %s is empty", fieldName)
-	}
-	if strings.Contains(valStr, ",") {
-		valStr = strings.Split(valStr, ",")[0]
-	}
-	mac, err := net.ParseMAC(valStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse MAC for field %s, value '%s': %w", fieldName, valStr, err)
-	}
-	return mac, nil
-}
-
-func getBool(row map[string]string, fieldName string) (bool, error) {
-	valStr := strings.TrimSpace(row[fieldName])
-	if valStr == "" {
-		return false, fmt.Errorf("field %s is empty", fieldName)
-	}
-	if strings.Contains(valStr, ",") {
-		valStr = strings.Split(valStr, ",")[0]
-	}
-	switch strings.ToLower(valStr) {
-	case "1", "true", "yes":
-		return true, nil
-	case "0", "false", "no":
-		return false, nil
-	default:
-		return false, fmt.Errorf("failed to parse bool for field %s, value '%s'", fieldName, valStr)
-	}
-}
-
-func parseFrameTypeSubtype(hexVal string) (uint8, uint8, string, error) {
-	if hexVal == "" {
-		return 0, 0, "Unknown", fmt.Errorf("wlan.fc.type_subtype is empty")
-	}
-	// Example: "0x08" for Beacon
-	val, err := strconv.ParseUint(strings.TrimPrefix(hexVal, "0x"), 16, 8)
-	if err != nil {
-		return 0, 0, "Unknown", fmt.Errorf("failed to parse wlan.fc.type_subtype '%s': %w", hexVal, err)
-	}
-	// Correctly extract Type and Subtype from the combined field
-	// Type is bits 2-3, Subtype is bits 4-7 of the 8-bit value
-	// Example: Beacon is Type 0, Subtype 8. wlan.fc.type_subtype = 0x08 (0000 1000)
-	// Type = (val & 0b00001100) >> 2
-	// Subtype = (val & 0b11110000) >> 4
-	// This logic was incorrect.
-	// Instead, we should use the direct tshark fields "wlan.fc.type" and "wlan.fc.subtype"
-	// which are already requested. The parseFrameTypeSubtype function will be simplified.
-
-	// This function will now take typeVal and subtypeVal directly if they are parsed from separate fields.
-	// For now, let's assume this function is called with pre-parsed type and subtype.
-	// The calling code in ProcessRow needs to be updated.
-	// This function's signature and purpose will change.
-
-	// The original logic based on combined field was:
-	// typeVal := (uint8(val) & 0b00001100) >> 2
-	// subtypeVal := (uint8(val) & 0b11110000) >> 4
-	// This is being replaced by direct field usage.
-	// The parameters typeVal and subtypeVal will be passed directly.
-	// So, the function signature should be:
-	// func formatFrameTypeString(typeVal uint8, subtypeVal uint8) string { ... }
-	// And the call site will parse "wlan.fc.type" and "wlan.fc.subtype"
-
-	// For now, let's keep the existing structure but acknowledge the parsing error source.
-	// The fix will be to use direct fields in ProcessRow.
-	// This function will be simplified or removed if direct fields are used.
-
-	// Re-evaluating: The function is called with typeSubtypeHex.
-	// It *must* parse this hex value.
-	// The issue is the bitwise extraction.
-	// Correct extraction from an 8-bit combined value (like 0x08 for Beacon):
-	// Type (bits 2,3)
-	// Subtype (bits 4,5,6,7)
-
-	// Example: 0x08 = 0000 1000
-	// Type = (0000 1000 & 0000 1100) >> 2 = (0000 0010) >> 2 = 0000 0000 = 0 (Incorrect for Mgmt)
-	// Subtype = (0000 1000 & 1111 0000) >> 4 = (0000 0000) >> 4 = 0 (Incorrect for Beacon)
-
-	// Correct interpretation of wlan.fc.type_subtype (e.g., 0x08):
-	// Bits 0-1: Protocol Version (usually 0)
-	// Bits 2-3: Type
-	// Bits 4-7: Subtype
-
-	// So, for 0x08 (00001000):
-	// Type bits are at index 2 and 3 (from right, 0-indexed): these are '00' -> Type 0 (Management)
-	// Subtype bits are at index 4,5,6,7: these are '1000' -> Subtype 8 (Beacon)
-
-	// Corrected extraction:
-	typeVal := (uint8(val) >> 2) & 0x03
-	subtypeVal := (uint8(val) >> 4) & 0x0F
-
-	var typeStr string
-	switch typeVal {
-	case 0: // Management
-		typeStr = "Mgmt"
-		switch subtypeVal {
-		case 0:
-			typeStr = "MgmtAssocReq"
-		case 1:
-			typeStr = "MgmtAssocResp"
-		case 2:
-			typeStr = "MgmtReassocReq"
-		case 3:
-			typeStr = "MgmtReassocResp"
-		case 4:
-			typeStr = "MgmtProbeReq"
-		case 5:
-			typeStr = "MgmtProbeResp"
-		case 8:
-			typeStr = "MgmtBeacon"
-		case 9:
-			typeStr = "MgmtATIM"
-		case 10:
-			typeStr = "MgmtDisassoc"
-		case 11:
-			typeStr = "MgmtAuth"
-		case 12:
-			typeStr = "MgmtDeauth"
-		case 13:
-			typeStr = "MgmtAction"
-		default:
-			typeStr = fmt.Sprintf("MgmtSubType%d", subtypeVal)
-		}
-	case 1: // Control
-		typeStr = "Ctrl"
-		switch subtypeVal {
-		case 8:
-			typeStr = "CtrlBlockAckReq"
-		case 9:
-			typeStr = "CtrlBlockAck"
-		case 10:
-			typeStr = "CtrlPSPoll"
-		case 11:
-			typeStr = "CtrlRTS"
-		case 12:
-			typeStr = "CtrlCTS"
-		case 13:
-			typeStr = "CtrlAck"
-		case 14:
-			typeStr = "CtrlCFEnd"
-		case 15:
-			typeStr = "CtrlCFEndAck"
-		default:
-			typeStr = fmt.Sprintf("CtrlSubType%d", subtypeVal)
-		}
-	case 2: // Data
-		typeStr = "Data"
-		switch subtypeVal {
-		case 0:
-			typeStr = "Data"
-		case 4:
-			typeStr = "DataNull" // Null data
-		case 8:
-			typeStr = "QoSData"
-		case 12:
-			typeStr = "QoSNull" // QoS Null
-		default:
-			typeStr = fmt.Sprintf("DataSubType%d", subtypeVal)
-		}
-	default:
-		typeStr = fmt.Sprintf("Type%dSubType%d", typeVal, subtypeVal)
-	}
-	return typeVal, subtypeVal, typeStr, nil
-}
-
-// ProcessRow converts a CSV row to ParsedFrameInfo.
-func (fp *FrameProcessor) ProcessRow(row map[string]string) (*ParsedFrameInfo, error) {
-	info := &ParsedFrameInfo{RawFields: row}
-	// var err error
-	var parseErrors []string
-
-	// 添加INFO级别日志，记录每一行处理开始
-	logger.Log.Info().Msgf("INFO_PROCESS_ROW: Processing new frame row, checking for security fields")
-
-	// 记录关键安全字段的存在情况
-	privacyBit := getString(row, "wlan.fixed.capabilities.privacy")
-	rsnAkms := getString(row, "wlan.rsn.akms.type")
-	frameType := getString(row, "wlan.fc.type")
-	frameSubType := getString(row, "wlan.fc.subtype")
-
-	logger.Log.Info().Msgf("INFO_SECURITY_FIELDS: privacy_bit='%s', rsn_akms='%s', frame_type='%s', frame_subtype='%s'",
-		privacyBit, rsnAkms, frameType, frameSubType)
-
-	// 5.1. Frame basic information
-	fieldName := "frame.time_epoch"
-	rawValue := getString(row, fieldName)
-	if val, e := getFloat64(row, fieldName); e == nil {
-		sec, dec := int64(val), int64((val-float64(int64(val)))*1e9)
-		info.Timestamp = time.Unix(sec, dec)
-	} else {
-		errStr := fmt.Sprintf("frame.time_epoch: %v", e)
-		parseErrors = append(parseErrors, errStr)
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_ERROR: Failed to parse field '%s' with value '%s': %v", fieldName, rawValue, e)
-		info.Timestamp = time.Time{} // Fallback to zero time, log error
-	}
-
-	fieldName = "frame.len"
-	rawValue = getString(row, fieldName)
-	if val, e := getInt(row, fieldName); e == nil {
-		info.FrameLength = val
-	} else {
-		errStr := fmt.Sprintf("frame.len: %v", e)
-		parseErrors = append(parseErrors, errStr)
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_ERROR: Failed to parse field '%s' with value '%s': %v", fieldName, rawValue, e)
-	}
-
-	fieldName = "frame.cap_len"
-	rawValue = getString(row, fieldName)
-	if val, e := getInt(row, fieldName); e == nil {
-		info.FrameCapLength = val
-	} else {
-		// Optional, so don't add to parseErrors if missing
-		if rawValue != "" { // Log error only if field was present but unparsable
-			// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-		}
-	}
-
-	fieldName = "wlan.fc.type_subtype"
-	typeSubtypeHex := getString(row, fieldName)
-	if typeVal, subtypeVal, typeStr, e := parseFrameTypeSubtype(typeSubtypeHex); e == nil {
-		info.WlanFcType = typeVal // This will now be correctly 0 for Mgmt, 1 for Ctrl, 2 for Data
-		info.WlanFcSubtype = subtypeVal
-		info.FrameType = typeStr
-		if info.WlanFcType == 2 && (info.WlanFcSubtype == 8 || info.WlanFcSubtype == 12) { // QoSData or QoSNull
-			info.IsQoSData = true
-		}
-	} else {
-		errStr := fmt.Sprintf("wlan.fc.type_subtype: %v", e)
-		parseErrors = append(parseErrors, errStr)
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_ERROR: Failed to parse field '%s' with value '%s': %v", fieldName, typeSubtypeHex, e)
-	}
-
-	// Alternative: Use direct wlan.fc.type and wlan.fc.subtype if available
-	// This is preferred if tshark provides them reliably.
-	// Check if "wlan.fc.type" and "wlan.fc.subtype" are in defaultTsharkFields
-	// They are: "wlan.fc.type", "wlan.fc.subtype"
-	// So, let's prioritize these direct fields.
-
-	typeValStr := getString(row, "wlan.fc.type")
-	subtypeValStr := getString(row, "wlan.fc.subtype")
-
-	if typeInt, typeErr := strconv.Atoi(typeValStr); typeErr == nil {
-		if subtypeInt, subtypeErr := strconv.Atoi(subtypeValStr); subtypeErr == nil {
-			info.WlanFcType = uint8(typeInt)
-			info.WlanFcSubtype = uint8(subtypeInt)
-			// Regenerate FrameType string based on these direct values
-			_, _, info.FrameType, _ = parseFrameTypeSubtype(typeSubtypeHex) // Keep using combined for string for now, or adapt formatFrameTypeString
-			// Better: adapt parseFrameTypeSubtype to take numeric type/subtype for string formatting
-			// For now, the string might be based on the potentially miscalculated combined field if direct parsing fails later.
-			// Let's refine FrameType string generation after confirming direct type/subtype
-			// This is a bit redundant if parseFrameTypeSubtype is correct.
-			// The main goal is to get WlanFcType correct for state_manager.
-
-			// Re-generate FrameType string using the directly parsed type and subtype
-			var tempTypeStr string
-			switch info.WlanFcType {
-			case 0: // Management
-				tempTypeStr = "Mgmt"
-				switch info.WlanFcSubtype {
-				case 0:
-					tempTypeStr = "MgmtAssocReq"
-				case 1:
-					tempTypeStr = "MgmtAssocResp"
-				case 2:
-					tempTypeStr = "MgmtReassocReq"
-				case 3:
-					tempTypeStr = "MgmtReassocResp"
-				case 4:
-					tempTypeStr = "MgmtProbeReq"
-				case 5:
-					tempTypeStr = "MgmtProbeResp"
-				case 8:
-					tempTypeStr = "MgmtBeacon"
-				case 9:
-					tempTypeStr = "MgmtATIM"
-				case 10:
-					tempTypeStr = "MgmtDisassoc"
-				case 11:
-					tempTypeStr = "MgmtAuth"
-				case 12:
-					tempTypeStr = "MgmtDeauth"
-				case 13:
-					tempTypeStr = "MgmtAction"
-				default:
-					tempTypeStr = fmt.Sprintf("MgmtSubType%d", info.WlanFcSubtype)
-				}
-			case 1: // Control
-				tempTypeStr = "Ctrl"
-				switch info.WlanFcSubtype {
-				case 8:
-					tempTypeStr = "CtrlBlockAckReq"
-				case 9:
-					tempTypeStr = "CtrlBlockAck"
-				case 10:
-					tempTypeStr = "CtrlPSPoll"
-				case 11:
-					tempTypeStr = "CtrlRTS"
-				case 12:
-					tempTypeStr = "CtrlCTS"
-				case 13:
-					tempTypeStr = "CtrlAck"
-				case 14:
-					tempTypeStr = "CtrlCFEnd"
-				case 15:
-					tempTypeStr = "CtrlCFEndAck"
-				default:
-					tempTypeStr = fmt.Sprintf("CtrlSubType%d", info.WlanFcSubtype)
-				}
-			case 2: // Data
-				tempTypeStr = "Data"
-				switch info.WlanFcSubtype {
-				case 0:
-					tempTypeStr = "Data"
-				case 4:
-					tempTypeStr = "DataNull"
-				case 8:
-					tempTypeStr = "QoSData"
-					info.IsQoSData = true
-				case 12:
-					tempTypeStr = "QoSNull"
-					info.IsQoSData = true
-				default:
-					tempTypeStr = fmt.Sprintf("DataSubType%d", info.WlanFcSubtype)
-				}
-			default:
-				tempTypeStr = fmt.Sprintf("Type%dSubType%d", info.WlanFcType, info.WlanFcSubtype)
+		if parsedInfo != nil {
+			// The RawFields map is not populated by GoPacketParser, initialize if nil to prevent panic
+			if parsedInfo.RawFields == nil {
+				parsedInfo.RawFields = make(map[string]string)
 			}
-			info.FrameType = tempTypeStr
-			// logger.Log.Debug().Msgf("DEBUG_PARSE_DIRECT_TYPE_SUBTYPE: Successfully parsed direct wlan.fc.type=%d, wlan.fc.subtype=%d. FrameType set to: %s", info.WlanFcType, info.WlanFcSubtype, info.FrameType)
-
-		} else if subtypeValStr != "" {
-			// logger.Log.Debug().Msgf("DEBUG_PARSE_ERROR: Failed to parse direct wlan.fc.subtype '%s': %v", subtypeValStr, subtypeErr)
-		}
-	} else if typeValStr != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_ERROR: Failed to parse direct wlan.fc.type '%s': %v", typeValStr, typeErr)
-	}
-
-	fieldName = "wlan.fc.retry"
-	rawValue = getString(row, fieldName)
-	if val, e := getBool(row, fieldName); e == nil {
-		info.RetryFlag = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	// 5.2. MAC Addresses
-	fieldsToParse := []string{"wlan.ra", "wlan.da", "wlan.ta", "wlan.sa", "wlan.bssid"}
-	macDestinations := []*net.HardwareAddr{&info.RA, &info.DA, &info.TA, &info.SA, &info.BSSID}
-
-	for i, fieldName := range fieldsToParse {
-		rawValue := getString(row, fieldName)
-		if mac, e := getMAC(row, fieldName); e == nil {
-			*macDestinations[i] = mac
-		} else if rawValue != "" {
-			errStr := fmt.Sprintf("%s: %v", fieldName, e)
-			parseErrors = append(parseErrors, errStr)
-			// logger.Log.Debug().Msgf("DEBUG_PARSE_ERROR: Failed to parse field '%s' with value '%s': %v", fieldName, rawValue, e)
+			pktHandler(parsedInfo)
 		}
 	}
 
-	// 5.3. Radiotap and Physical Layer Information
-	fieldName = "radiotap.channel.freq"
-	rawValue = getString(row, fieldName)
-	if val, e := getInt(row, fieldName); e == nil {
-		info.Frequency = val
-		info.Channel = utils.FrequencyToChannel(val)
-	} else if rawValue != "" {
-		// Don't add to parseErrors, let it be default. Critical for BSSID/SA/DA etc.
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_ERROR: Failed to parse field '%s' with value '%s' (will use default): %v", fieldName, rawValue, e)
+	logger.Log.Info().
+		Int("totalFrames", frameCount).
+		Int("errorCount", errorCount).
+		Msg("INFO_PCAP_PROCESS: Finished processing packets from gopacket.PacketSource")
+
+	if errorCount > 0 {
+		return fmt.Errorf("encountered %d errors during packet parsing", errorCount)
+	}
+	return nil
+}
+
+// ProcessPcapFile processes a pcap file using gopacket.
+func ProcessPcapFile(pcapFilePath string, _ string /* tsharkPath (unused) */, pktHandler PacketInfoHandler) error {
+	logger.Log.Info().Str("filePath", pcapFilePath).Msg("INFO_PCAP_PROCESS: Opening pcap file for gopacket processing")
+	handle, err := pcap.OpenOffline(pcapFilePath)
+	if err != nil {
+		logger.Log.Error().Err(err).Str("filePath", pcapFilePath).Msg("Error opening pcap file with gopacket")
+		return fmt.Errorf("gopacket.OpenOffline failed: %w", err)
+	}
+	defer handle.Close()
+
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	return ProcessPacketSource(packetSource, pktHandler)
+}
+
+// ProcessPcapStream processes a pcap stream using gopacket.
+// The packetSource is now expected to be created by the caller (e.g., from pcapgo.NewReader).
+func ProcessPcapStream(packetSource *gopacket.PacketSource, _ string /* tsharkPath (unused) */, pktHandler PacketInfoHandler) error {
+	logger.Log.Info().Msg("INFO_PCAP_PROCESS: Starting pcap stream processing with gopacket")
+	return ProcessPacketSource(packetSource, pktHandler)
+}
+
+// getPHYRateMbps estimates the PHY rate. This function is a placeholder and needs actual implementation
+// based on radiotap fields if they are reliably available, or from parsed HT/VHT/HE capabilities.
+// Note: This function is currently NOT CALLED by GoPacketParser.ParsePacket directly.
+// The rate calculation is embedded within ParsePacket.
+func getPHYRateMbps(info *ParsedFrameInfo) float64 {
+	// This is a very basic placeholder.
+	// A more accurate calculation would involve looking at Radiotap MCS/VHT/HE fields,
+	// or HT/VHT/HE capabilities elements.
+	// For now, if RadiotapDataRate is present, use it (it's often for legacy rates).
+	if info.RadiotapDataRate > 0 {
+		return info.RadiotapDataRate
+	}
+	// Fallback or more complex logic needed here.
+	return 0.0 // Default if no rate info found
+}
+
+// CalculateFrameAirtime estimates the airtime for a given frame.
+// This is a simplified version. Real airtime calculation is complex.
+// NOTE: This function is currently NOT USED. Airtime calculation was removed from StateManager.
+func CalculateFrameAirtime(frameLengthBytes int, phyRateMbps float64, isShortPreamble bool, isShortGI bool) time.Duration {
+	if phyRateMbps <= 0 {
+		return 0 // Avoid division by zero or negative rates
 	}
 
-	// 检查并记录RSN相关字段
-	rsnVersion := getString(row, "wlan.rsn.version")
-	privacy := getString(row, "wlan.fixed.capabilities.privacy")
-	akmsType := getString(row, "wlan.rsn.akms.type")
+	// Basic data transmission time
+	// bits = bytes * 8
+	// time_seconds = bits / (phyRateMbps * 1,000,000)
+	dataTxTimeMicroseconds := float64(frameLengthBytes*8) / phyRateMbps
 
-	// 如果有任何安全相关字段，设置RSNRaw为非空
-	if rsnVersion != "" || (privacy == "True" && akmsType != "") {
-		info.RSNRaw = []byte{1} // 至少有一个非零元素表示存在RSN
-		logger.Log.Info().Msgf("INFO_RSN_DATA: RSN data found - version='%s', privacy='%s', akms.type='%s'",
-			rsnVersion, privacy, akmsType)
-	} else {
-		info.RSNRaw = []byte{} // 空slice
-		logger.Log.Info().Msgf("INFO_RSN_DATA: No RSN data found in this frame")
+	// Simplified preamble and overhead considerations (these are very rough estimates)
+	// Actual overhead depends on PHY type (802.11a/g/n/ac/ax), preambles, SIFS, DIFS, backoff, etc.
+	var overheadMicroseconds float64 = 20 // Generic overhead for SIFS + ACK etc. (very rough)
+
+	if isShortPreamble {
+		overheadMicroseconds -= 5 // Arbitrary reduction for short preamble
+	}
+	if isShortGI {
+		overheadMicroseconds -= 4 // Arbitrary reduction for short GI (especially at higher rates)
 	}
 
-	fieldName = "radiotap.dbm_antsignal"
-	rawValue = getString(row, fieldName)
-	if val, e := getInt(row, fieldName); e == nil {
-		info.SignalStrength = val
-	} else if rawValue != "" {
-		// Don't add to parseErrors, let it be default.
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_ERROR: Failed to parse field '%s' with value '%s' (will use default): %v", fieldName, rawValue, e)
+	totalAirtimeMicroseconds := dataTxTimeMicroseconds + overheadMicroseconds
+	if totalAirtimeMicroseconds < 0 {
+		totalAirtimeMicroseconds = 0
 	}
 
-	fieldName = "radiotap.dbm_antnoise"
-	rawValue = getString(row, fieldName)
-	if val, e := getInt(row, fieldName); e == nil {
-		info.NoiseLevel = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
+	return time.Duration(totalAirtimeMicroseconds * float64(time.Microsecond))
+}
+
+// ParsePacket uses gopacket to parse an 802.11 frame and extract information.
+func (p *GoPacketParser) ParsePacket(packet gopacket.Packet) (*ParsedFrameInfo, error) {
+	info := &ParsedFrameInfo{
+		Timestamp:      packet.Metadata().Timestamp,
+		FrameLength:    packet.Metadata().Length,
+		FrameCapLength: packet.Metadata().CaptureLength,
+		RawFields:      make(map[string]string),
 	}
 
-	// Radiotap PHY fields for PhyRateCalculator
-	fieldName = "radiotap.datarate"
-	rawValue = getString(row, fieldName)
-	if val, e := getFloat64(row, fieldName); e == nil {
-		info.RadiotapDataRate = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	fieldName = "radiotap.mcs.index"
-	rawValue = getString(row, fieldName)
-	if val, e := getUint8(row, fieldName); e == nil {
-		info.RadiotapMCSIndex = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	fieldName = "radiotap.mcs.bw"
-	rawValue = getString(row, fieldName)
-	if val, e := getUint8(row, fieldName); e == nil {
-		info.RadiotapMCSBw = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	fieldName = "radiotap.mcs.gi"
-	rawValue = getString(row, fieldName)
-	if val, e := getBool(row, fieldName); e == nil {
-		info.RadiotapMCSGI = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	fieldName = "radiotap.vht.mcs"
-	rawValue = getString(row, fieldName)
-	if val, e := getUint8(row, fieldName); e == nil {
-		info.RadiotapVHTMCS = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	fieldName = "radiotap.vht.nss"
-	rawValue = getString(row, fieldName)
-	if val, e := getUint8(row, fieldName); e == nil {
-		info.RadiotapVHTNSS = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	info.RadiotapVHTBw = getString(row, "radiotap.vht.bw") // String: "20", "40", "80", "160", "80+80"
-
-	fieldName = "radiotap.vht.gi"
-	rawValue = getString(row, fieldName)
-	if val, e := getBool(row, fieldName); e == nil {
-		info.RadiotapVHTShortGI = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	fieldName = "radiotap.he.mcs"
-	rawValue = getString(row, fieldName)
-	if val, e := getUint8(row, fieldName); e == nil {
-		info.RadiotapHEMCS = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	fieldName = "radiotap.he.nss"
-	rawValue = getString(row, fieldName)
-	if val, e := getUint8(row, fieldName); e == nil {
-		info.RadiotapHENSS = val
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	// 5.5.1 BitRate
-	// 首先尝试从wlan.supported_rates获取比特率
-	fieldName = "wlan.supported_rates"
-	rawValue = getString(row, fieldName)
-	if rawValue != "" {
-		// 支持的速率可能有多个值，我们取第一个非零值
-		rates := strings.Split(rawValue, ",")
-		for _, rate := range rates {
-			if val, e := strconv.ParseFloat(strings.TrimSpace(rate), 64); e == nil && val > 0 {
-				info.BitRate = val
-				logger.Log.Debug().Msgf("DEBUG_BITRATE_FROM_SUPPORTED_RATES: Using wlan.supported_rates=%v to set BitRate=%.1f Mbps", val, info.BitRate)
-				break
-			}
+	if radiotapLayer := packet.Layer(layers.LayerTypeRadioTap); radiotapLayer != nil {
+		rt, ok := radiotapLayer.(*layers.RadioTap)
+		if !ok {
+			return nil, fmt.Errorf("failed to assert RadioTap layer")
 		}
-	}
-
-	// 如果wlan.supported_rates未设置BitRate，尝试使用wlan_radio.data_rate
-	if info.BitRate == 0 {
-		fieldName = "wlan_radio.data_rate"
-		rawValue = getString(row, fieldName)
-		if val, e := getFloat64(row, fieldName); e == nil && val > 0 {
-			info.BitRate = val
-			logger.Log.Debug().Msgf("DEBUG_BITRATE_FROM_WLAN_RADIO: Using wlan_radio.data_rate=%v to set BitRate=%.1f Mbps", val, info.BitRate)
-		} else if rawValue != "" {
-			logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
+		if rt.Present.DBMAntennaSignal() {
+			info.SignalStrength = int(rt.DBMAntennaSignal)
 		}
-	}
-
-	info.RadiotapHEBw = getString(row, "radiotap.he.bw") // String: "20MHz", "40MHz", "80MHz", "HE_MU_80MHz" etc.
-	info.RadiotapHEGI = getString(row, "radiotap.he.gi") // String: "0.8us", "1.6us", "3.2us"
-
-	// Calculate PHY Rate
-	info.PHYRateMbps = getPHYRateMbps(info) // Pass the partially filled info
-
-	// 5.4. BSS Information
-	fieldName = "wlan.ssid"
-	rawSsidStr := getString(row, fieldName)
-
-	// Determine security
-	security := "Open" // Default
-	capPrivacyStr := getString(row, "wlan.fixed.capabilities.privacy")
-	rsnAkmsType := getString(row, "wlan.rsn.akms.type")
-
-	logger.Log.Info().Msgf("INFO_SECURITY_PARSE: Begin security parsing for BSSID %s", info.BSSID)
-	logger.Log.Info().Msgf("INFO_SECURITY_PARSE: wlan.fixed.capabilities.privacy = '%s'", capPrivacyStr)
-	logger.Log.Info().Msgf("INFO_SECURITY_PARSE: wlan.rsn.akms.type = '%s'", rsnAkmsType)
-
-	// 增加解析BSSID相关字段
-	bssidStr := getString(row, "wlan.bssid")
-	if bssidStr != "" {
-		logger.Log.Info().Msgf("INFO_SECURITY_PARSE: Found BSSID in data: %s", bssidStr)
-	}
-
-	// 检查管理帧相关字段
-	ssidStr := getString(row, "wlan.ssid")
-	if ssidStr != "" {
-		logger.Log.Info().Msgf("INFO_SECURITY_PARSE: Found SSID in data: %s", ssidStr)
-	}
-
-	if capPrivacyStr == "1" {
-		security = "WEP"
-		logger.Log.Info().Msgf("INFO_SECURITY_PARSE: Privacy bit set, default to WEP")
-	}
-
-	if rsnAkmsType != "" {
-		// 详细解析wlan.rsn.akms.type以确定具体加密类型
-		if strings.Contains(rsnAkmsType, "2") {
-			security = "WPA2-PSK"
-			logger.Log.Info().Msgf("INFO_SECURITY_PARSE: RSN/AKM type contains '2', setting to WPA2-PSK")
-		} else if strings.Contains(rsnAkmsType, "8") {
-			security = "WPA3-SAE"
-			logger.Log.Info().Msgf("INFO_SECURITY_PARSE: RSN/AKM type contains '8', setting to WPA3-SAE")
-		} else {
-			security = "WPA2/WPA3"
-			logger.Log.Info().Msgf("INFO_SECURITY_PARSE: RSN/AKM type present but not recognized, using generic WPA2/WPA3")
+		if rt.Present.DBMAntennaNoise() {
+			info.NoiseLevel = int(rt.DBMAntennaNoise)
 		}
-	}
-
-	logger.Log.Info().Msgf("INFO_SECURITY_PARSE: Final security type: %s", security)
-	info.Security = security
-
-	if rawSsidStr != "" {
-		// Attempt to decode from hex first
-		decodedHexSsid, err := hex.DecodeString(rawSsidStr)
-		processedSsidStr := ""
-		if err == nil {
-			processedSsidStr = string(decodedHexSsid)
-			// logger.Log.Debug().Msgf("DEBUG_SSID_HEX_DECODE_SUCCESS: Field '%s' was hex-decoded to: '%s'", fieldName, processedSsidStr)
-		} else {
-			// Not valid hex, or some other error, use original string
-			processedSsidStr = rawSsidStr
-			// logger.Log.Debug().Msgf("DEBUG_SSID_HEX_DECODE_FAIL: Field '%s' not valid hex ('%s'), using as is. Error: %v", fieldName, rawSsidStr, err)
+		if rt.Present.Channel() {
+			info.Frequency = int(rt.ChannelFrequency)
+			info.Channel = utils.FrequencyToChannel(info.Frequency)
 		}
-
-		if utf8.ValidString(processedSsidStr) {
-			info.SSID = processedSsidStr
-		} else {
-			info.SSID = "<Invalid SSID Encoding>"
+		if rt.Present.Rate() {
+			info.RadiotapDataRate = float64(rt.Rate) * 0.5
 		}
-	}
-	// logger.Log.Debug().Msgf("DEBUG_SSID_DECODED: Decoded SSID for BSSID %s: %s", info.SSID, info.SSID)
-	// Add the requested log after SSID processing
-	// logger.Log.Debug().Msgf("DEBUG_SSID_DECODED: Decoded SSID for BSSID %s: %s", info.BSSID, info.SSID)
-
-	fieldName = "wlan.ds.current_channel"
-	rawValue = getString(row, fieldName)
-	if val, e := getUint8(row, fieldName); e == nil {
-		info.DSSetChannel = val
-		if info.Channel == 0 && val > 0 { // If radiotap channel was missing, use DSSet
-			info.Channel = int(val)
-		}
-	} else if rawValue != "" {
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-	}
-
-	// HT Capabilities
-	if htCapsStr := getString(row, "wlan.ht.capabilities"); htCapsStr != "" {
-		info.ParsedHTCaps = &HTCapabilityInfo{}
-		fieldName := "wlan.ht.info.primarychannel"
-		rawValue := getString(row, fieldName)
-		if val, e := getUint8(row, fieldName); e == nil {
-			info.ParsedHTCaps.PrimaryChannel = val
-		} else if rawValue != "" {
-			logger.Log.Warn().Msgf("WARN_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-		}
-
-		info.ParsedHTCaps.SecondaryChannelOffset = getString(row, "wlan.ht.info.secchanoffset") // e.g. "above", "below"
-
-		// Parse additional HT capability fields
-		if val, e := getBool(row, "wlan.ht.capabilities.ldpccoding"); e == nil {
-			info.ParsedHTCaps.LDPCCoding = val
-		}
-
-		if val, e := getBool(row, "wlan.ht.capabilities.width"); e == nil && val {
-			info.ParsedHTCaps.ChannelWidth40MHz = val
-		}
-
-		if val, e := getBool(row, "wlan.ht.capabilities.short20"); e == nil {
-			info.ParsedHTCaps.ShortGI20MHz = val
-		}
-
-		if val, e := getBool(row, "wlan.ht.capabilities.short40"); e == nil {
-			info.ParsedHTCaps.ShortGI40MHz = val
-		}
-
-		if val, e := getBool(row, "wlan.ht.capabilities.txstbc"); e == nil {
-			info.ParsedHTCaps.TxSTBC = val
-		}
-
-		if val, e := getUint8(row, "wlan.ht.capabilities.rxstbc"); e == nil {
-			info.ParsedHTCaps.RxSTBC = val
-		}
-
-		if val, e := getBool(row, "wlan.ht.capabilities.delayedblockack"); e == nil {
-			info.ParsedHTCaps.HTDelayedBlockAck = val
-		}
-
-		if val, e := getBool(row, "wlan.ht.capabilities.dsscck"); e == nil {
-			info.ParsedHTCaps.DSSCck = val
-		}
-
-		if val, e := getBool(row, "wlan.ht.capabilities.40mhzintolerant"); e == nil {
-			info.ParsedHTCaps.FortyMhzIntolerant = val
-		}
-
-		// Parse AMPDU parameters
-		if val, e := getUint32(row, "wlan.ht.ampduparam.maxlength"); e == nil {
-			info.ParsedHTCaps.MaxAMPDULength = val
-		}
-
-		// Prioritize radiotap.mcs.bw for bandwidth if available
-		if info.RadiotapMCSBw == 1 { // 40MHz
-			info.Bandwidth = "40MHz"
-		} else if info.RadiotapMCSBw == 0 { // 20MHz
-			info.Bandwidth = "20MHz"
-		} else {
-			// If radiotap.mcs.bw is not available, infer from channel offset
-			if info.ParsedHTCaps.SecondaryChannelOffset != "" || info.ParsedHTCaps.ChannelWidth40MHz {
-				info.Bandwidth = "40MHz" // Infer 40MHz if secondary channel offset is present
-			} else {
-				info.Bandwidth = "20MHz" // Default to 20MHz if no offset
-			}
-		}
-		if info.RadiotapMCSGI {
-			info.IsShortGI = true
-		} else {
-			// Potentially infer Short GI from HT Capabilities, if not in radiotap
-			if info.ParsedHTCaps.ShortGI20MHz || info.ParsedHTCaps.ShortGI40MHz {
+		if rt.Present.MCS() {
+			info.RadiotapMCSIndex = rt.MCS.MCS
+			flags := rt.MCS.Flags // This is layers.RadioTapMCSFlags
+			if flags.ShortGI() {
 				info.IsShortGI = true
 			}
+
+			// Populate RadiotapMCSBw based on MCS flags
+			// info.RadiotapMCSBw: 0 for 20MHz, 1 for 40MHz
+			// rt.MCS.Flags.Bandwidth() returns (flags & 0x03) which corresponds to:
+			// 0 (00_bin): 20MHz (layers.RadioTapMCSBandwidth20)
+			// 1 (01_bin): 40MHz (layers.RadioTapMCSBandwidth40)
+			// 2 (10_bin): 20L MHz (VHT) (layers.RadioTapMCSBandwidth20L)
+			// 3 (11_bin): 20U MHz (VHT) (layers.RadioTapMCSBandwidth20U)
+			bwRawValue := flags.Bandwidth() // Type is layers.RadioTapMCSFlags, value is 0,1,2 or 3
+
+			if bwRawValue == 1 { // Value for 40MHz
+				info.RadiotapMCSBw = 1 // 40MHz
+			} else { // Covers 0 (20MHz), 2 (20L), 3 (20U)
+				info.RadiotapMCSBw = 0 // Defaulting to 20MHz for these cases, aligning with info.RadiotapMCSBw structure
+			}
 		}
-	} // HT Capabilities 结束
-
-	// VHT Capabilities
-	if vhtCapsStr := getString(row, "wlan.vht.capabilities"); vhtCapsStr != "" {
-		info.ParsedVHTCaps = &VHTCapabilityInfo{}
-		vhtChannelWidth := getString(row, "wlan.vht.op.channelwidth")
-		info.ParsedVHTCaps.ChannelWidth = vhtChannelWidth
-
-		// Parse SupportedChannelWidthSet
-		if val, e := getUint8(row, "wlan.vht.capabilities.supportedchanwidthset"); e == nil {
-			info.ParsedVHTCaps.SupportedChannelWidthSet = val
+		if rt.Present.VHT() {
+			// VHT parsing
 		}
+	} else {
+		logger.Log.Warn().Msg("No Radiotap layer found in packet")
+	}
 
-		// Parse MaxMPDULength
-		if val, e := getUint8(row, "wlan.vht.capabilities.maxmpdulength"); e == nil {
-			info.ParsedVHTCaps.MaxMPDULength = val
-		}
+	dot11Layer := packet.Layer(layers.LayerTypeDot11)
+	if dot11Layer == nil {
+		return nil, fmt.Errorf("no Dot11 layer found")
+	}
+	dot11, ok := dot11Layer.(*layers.Dot11)
+	if !ok {
+		return nil, fmt.Errorf("failed to assert Dot11 layer")
+	}
 
-		// Parse short GI flags
-		if val, e := getBool(row, "wlan.vht.capabilities.short80"); e == nil {
-			info.ParsedVHTCaps.ShortGI80MHz = val
-		}
+	mainType := dot11.Type.MainType()
+	info.WlanFcType = uint8(mainType)
+	info.WlanFcSubtype = uint8(dot11.Type)
+	info.FrameType = dot11.Type.String()
 
-		if val, e := getBool(row, "wlan.vht.capabilities.short160"); e == nil {
-			info.ParsedVHTCaps.ShortGI160MHz = val
-		}
+	info.RetryFlag = dot11.Flags.Retry()
+	info.MACDurationID = dot11.DurationID
 
-		// Parse beamforming capabilities
-		if val, e := getBool(row, "wlan.vht.capabilities.subeamformer"); e == nil {
-			info.ParsedVHTCaps.SUBeamformerCapable = val
-		}
+	info.DA = dot11.Address1
+	info.SA = dot11.Address2
+	info.BSSID = dot11.Address3
 
-		if val, e := getBool(row, "wlan.vht.capabilities.subeamformee"); e == nil {
-			info.ParsedVHTCaps.SUBeamformee = val
-		}
+	toDS := dot11.Flags.ToDS()
+	fromDS := dot11.Flags.FromDS()
 
-		if val, e := getBool(row, "wlan.vht.capabilities.mubeamformer"); e == nil {
-			info.ParsedVHTCaps.MUBeamformerCapable = val
-		}
-
-		if val, e := getBool(row, "wlan.vht.capabilities.mubeamformee"); e == nil {
-			info.ParsedVHTCaps.MUBeamformee = val
-		}
-
-		// Parse STBC capabilities
-		if val, e := getBool(row, "wlan.vht.capabilities.txstbc"); e == nil {
-			info.ParsedVHTCaps.TxSTBC = val
-		}
-
-		if val, e := getUint8(row, "wlan.vht.capabilities.rxstbc"); e == nil {
-			info.ParsedVHTCaps.RxSTBC = val
-		}
-
-		// Parse LDPC capability
-		if val, e := getBool(row, "wlan.vht.capabilities.rxldpc"); e == nil {
-			info.ParsedVHTCaps.RxLDPC = val
-		}
-
-		// Parse beamforming parameters
-		if val, e := getUint8(row, "wlan.vht.capabilities.beamformee_sts_cap"); e == nil {
-			info.ParsedVHTCaps.BeamformeeSTS = val
-		}
-
-		if val, e := getUint8(row, "wlan.vht.capabilities.soundingdimensions"); e == nil {
-			info.ParsedVHTCaps.SoundingDimensions = val
-		}
-
-		// Parse consistency flags
-		if val, e := getBool(row, "wlan.vht.capabilities.rxpatconsist"); e == nil {
-			info.ParsedVHTCaps.RxPatternConsistency = val
-		}
-
-		if val, e := getBool(row, "wlan.vht.capabilities.txpatconsist"); e == nil {
-			info.ParsedVHTCaps.TxPatternConsistency = val
-		}
-
-		// Parse AMPDU length exponent
-		if val, e := getUint8(row, "wlan.vht.capabilities.maxampdu"); e == nil {
-			info.ParsedVHTCaps.MaxAMPDULengthExp = val
-		}
-
-		// Parse VHT MCS maps
-		if val, e := getUint16(row, "wlan.vht.mcsset.rxmcsmap"); e == nil {
-			info.ParsedVHTCaps.RxMCSMap = val
-		}
-
-		if val, e := getUint16(row, "wlan.vht.mcsset.txmcsmap"); e == nil {
-			info.ParsedVHTCaps.TxMCSMap = val
-		}
-
-		if val, e := getUint16(row, "wlan.vht.mcsset.rxhighestlonggirate"); e == nil {
-			info.ParsedVHTCaps.RxHighestLongGIRate = val
-		}
-
-		if val, e := getUint16(row, "wlan.vht.mcsset.txhighestlonggirate"); e == nil {
-			info.ParsedVHTCaps.TxHighestLongGIRate = val
-		}
-
-		// Parse VHT HTC capability
-		if val, e := getBool(row, "wlan.vht.capabilities.vhthtc"); e == nil {
-			info.ParsedVHTCaps.VHTHTCCapability = val
-		}
-
-		// Parse VHT TXOP PS capability
-		if val, e := getBool(row, "wlan.vht.capabilities.vhttxopps"); e == nil {
-			info.ParsedVHTCaps.VHTTXOPPSCapability = val
-		}
-
-		fieldName := "wlan.vht.op.channelcenter0"
-		rawValue := getString(row, fieldName)
-		if val, e := getUint8(row, fieldName); e == nil {
-			info.ParsedVHTCaps.ChannelCenter0 = val
-		} else if rawValue != "" {
-			logger.Log.Warn().Msgf("WARN_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-		}
-
-		fieldName = "wlan.vht.op.channelcenter1"
-		rawValue = getString(row, fieldName)
-		if val, e := getUint8(row, fieldName); e == nil {
-			info.ParsedVHTCaps.ChannelCenter1 = val
-		} else if rawValue != "" {
-			logger.Log.Warn().Msgf("WARN_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, e)
-		}
-
-		// Prioritize radiotap.vht.bw for bandwidth if available
-		if info.RadiotapVHTBw != "" {
-			info.Bandwidth = info.RadiotapVHTBw // Use radiotap.vht.bw directly
+	switch {
+	case !toDS && !fromDS:
+		info.RA = dot11.Address1
+		info.TA = dot11.Address2
+	case !toDS && fromDS:
+		info.RA = dot11.Address1
+		info.TA = dot11.Address2
+		info.SA = dot11.Address3
+		info.BSSID = dot11.Address2
+	case toDS && !fromDS:
+		info.RA = dot11.Address3
+		info.TA = dot11.Address2
+		info.DA = dot11.Address1
+		info.BSSID = dot11.Address1
+	case toDS && fromDS:
+		info.RA = dot11.Address1
+		info.TA = dot11.Address2
+		if dot11.Address4 != nil {
+			info.DA = dot11.Address3
+			info.SA = dot11.Address4
 		} else {
-			// Infer from VHT channel width if radiotap is missing
-			switch vhtChannelWidth {
-			case "1":
-				info.Bandwidth = "80MHz"
-			case "2":
-				info.Bandwidth = "160MHz"
-			case "3":
-				info.Bandwidth = "80+80MHz"
-			case "0":
-				// Differentiate 20/40 MHz based on HT or other info if possible
-				if info.Bandwidth != "40MHz" {
+			info.DA = dot11.Address3
+		}
+	}
+
+	if dot11.Type.QOS() {
+		info.IsQoSData = true
+	}
+
+	// --- IE Parsing for Management Frames (Manual from Payload) ---
+	if dot11.Type.MainType() == layers.Dot11TypeMgmt {
+		var iePayload []byte
+
+		switch dot11.Type {
+		case layers.Dot11TypeMgmtBeacon:
+			if beaconLayer := packet.Layer(layers.LayerTypeDot11MgmtBeacon); beaconLayer != nil {
+				if beacon, ok := beaconLayer.(*layers.Dot11MgmtBeacon); ok {
+					iePayload = beacon.Payload
+				} else {
+					logger.Log.Debug().Msg("Failed to assert Dot11MgmtBeacon layer after finding it.")
+				}
+			} else {
+				logger.Log.Debug().Msg("Dot11MgmtBeacon layer not found by direct type request.")
+			}
+		case layers.Dot11TypeMgmtProbeResp:
+			if probeRespLayer := packet.Layer(layers.LayerTypeDot11MgmtProbeResp); probeRespLayer != nil {
+				if probeResp, ok := probeRespLayer.(*layers.Dot11MgmtProbeResp); ok {
+					iePayload = probeResp.Payload
+				} else {
+					logger.Log.Debug().Msg("Failed to assert Dot11MgmtProbeResp layer after finding it.")
+				}
+			} else {
+				logger.Log.Debug().Msg("Dot11MgmtProbeResp layer not found by direct type request.")
+			}
+		case layers.Dot11TypeMgmtProbeReq:
+			if probeReqLayer := packet.Layer(layers.LayerTypeDot11MgmtProbeReq); probeReqLayer != nil {
+				if probeReq, ok := probeReqLayer.(*layers.Dot11MgmtProbeReq); ok {
+					iePayload = probeReq.Payload
+				} else {
+					logger.Log.Debug().Msg("Failed to assert Dot11MgmtProbeReq layer after finding it.")
+				}
+			} else {
+				logger.Log.Debug().Msg("Dot11MgmtProbeReq layer not found by direct type request.")
+			}
+		default:
+			logger.Log.Debug().Stringer("mgmt_frame_type", dot11.Type).Msg("SSID parsing not specifically handled for this management frame subtype via specific layer.")
+		}
+
+		if iePayload != nil {
+			currentIndex := 0
+			for currentIndex < len(iePayload) {
+				if currentIndex+2 > len(iePayload) { // Need at least ID and Length fields
+					logger.Log.Warn().Int("offset", currentIndex).Int("payload_len", len(iePayload)).Msg("IE parsing stopped: not enough data for ID/Length.")
+					break
+				}
+				ieID := layers.Dot11InformationElementID(iePayload[currentIndex])
+				ieLength := int(iePayload[currentIndex+1])
+
+				if currentIndex+2+ieLength > len(iePayload) { // Check if data for this IE is fully present
+					logger.Log.Warn().Stringer("ie_id", ieID).Int("declared_len", ieLength).Int("remaining_payload", len(iePayload)-currentIndex-2).Msg("IE parsing stopped: declared length exceeds available payload.")
+					break
+				}
+				ieData := iePayload[currentIndex+2 : currentIndex+2+ieLength]
+
+				switch ieID {
+				case layers.Dot11InformationElementIDSSID:
+					if len(ieData) == 0 {
+						info.SSID = "<empty>"
+					} else {
+						isHidden := true
+						for _, b := range ieData {
+							if b != 0 {
+								isHidden = false
+								break
+							}
+						}
+						if isHidden {
+							info.SSID = "<hidden>"
+						} else {
+							if utf8.Valid(ieData) {
+								info.SSID = string(ieData)
+							} else {
+								hexSSID := fmt.Sprintf("%x", ieData)
+								logger.Log.Warn().Str("bssid", info.BSSID.String()).Str("ssid_hex", hexSSID).Msg("Non-UTF-8 SSID encountered, displaying as hex.")
+								info.SSID = fmt.Sprintf("<HEX:%s>", hexSSID)
+							}
+						}
+					}
+				case layers.Dot11InformationElementIDDSSet:
+					if len(ieData) == 1 {
+						info.DSSetChannel = ieData[0]
+						if info.Channel == 0 && info.DSSetChannel > 0 {
+							info.Channel = int(info.DSSetChannel)
+						}
+					}
+				case layers.Dot11InformationElementIDTIM:
+					info.TIM = make([]byte, len(ieData))
+					copy(info.TIM, ieData)
+
+				// Simplified stubs for capability IEs - assuming functions exist later
+				case layers.Dot11InformationElementIDHTCapabilities:
+					if info.ParsedHTCaps == nil {
+						info.ParsedHTCaps = &HTCapabilityInfo{}
+					} // Ensure not nil
+					parseHTCapabilitiesIE(info, ieData)
+				case layers.Dot11InformationElementIDRSNInfo:
+					// info.RSNRaw is currently just storing the raw IE.
+					// We will now call the dedicated parser instead/in addition.
+					parseRSNIE(info, ieData)
+					// Keep storing raw RSN for now, might be useful for debugging or if parsing fails
+					info.RSNRaw = make([]byte, 2+len(ieData))
+					info.RSNRaw[0] = byte(ieID)
+					info.RSNRaw[1] = byte(ieLength)
+					copy(info.RSNRaw[2:], ieData)
+				case layers.Dot11InformationElementIDVHTCapabilities:
+					if info.ParsedVHTCaps == nil {
+						info.ParsedVHTCaps = &VHTCapabilityInfo{}
+					}
+					parseVHTCapabilitiesIE(info, ieData)
+				case layers.Dot11InformationElementID(61): // HT Operation Element ID is 61
+					parseHTOperationIE(info, ieData)
+				case layers.Dot11InformationElementID(192): // VHT Operation Element ID is 192
+					parseVHTOperationIE(info, ieData)
+				case layers.Dot11InformationElementID(0xff): // Check for Extension (255), assuming layers.Dot11InformationElementIDExtension is not defined for linter
+					if len(ieData) > 0 {
+						extensionID := ieData[0]
+						const heCapabilitiesExtID uint8 = 35
+						if extensionID == heCapabilitiesExtID {
+							if info.ParsedHECaps == nil {
+								info.ParsedHECaps = &HECapabilityInfo{}
+							}
+							// extractHECapabilities(info, &layers.Dot11InformationElement{ID: ieID, Length: byte(ieLength), Info: ieData}, nil, nil)
+						}
+					}
+				}
+				currentIndex += 2 + ieLength
+			}
+			// Calls to parseSecurity and determineBandwidth would ideally be here, after loop
+			// parseSecurity(packet, info)
+			// determineBandwidth(info)
+		}
+	}
+
+	if dot11.Type.MainType() == layers.Dot11TypeData {
+		llcLayer := packet.Layer(layers.LayerTypeLLC)
+		if llcLayer != nil {
+			llc, _ := llcLayer.(*layers.LLC)
+			if llc.DSAP == 0xAA && llc.SSAP == 0xAA && llc.Control == 0x03 {
+				// SNAP packet
+			}
+		}
+	}
+
+	if ipLayer := packet.Layer(layers.LayerTypeIPv4); ipLayer != nil {
+		ipv4, _ := ipLayer.(*layers.IPv4)
+		info.TransportPayloadLength = int(ipv4.Length) - (int(ipv4.IHL) * 4)
+	} else if ipLayer := packet.Layer(layers.LayerTypeIPv6); ipLayer != nil {
+		ipv6, _ := ipLayer.(*layers.IPv6)
+		info.TransportPayloadLength = int(ipv6.Length)
+	}
+
+	if info.RadiotapDataRate > 0 {
+		info.BitRate = info.RadiotapDataRate
+		info.PHYRateMbps = info.RadiotapDataRate
+	}
+
+	// --- Determine Bandwidth based on parsed IEs and Radiotap ---
+	// This logic should be placed after all relevant IEs have been parsed.
+	foundBandwidth := false
+	// 1. VHT Operation IE (Most accurate if present)
+	if info.ParsedVHTCaps != nil && info.ParsedVHTCaps.ChannelWidth != "" {
+		if info.ParsedVHTCaps.ChannelWidth == "20_40" {
+			// Fallback to HT Operation or capabilities for 20 vs 40 decision
+			// Check HT Operation first if available
+			if info.ParsedHTCaps != nil && info.ParsedHTCaps.PrimaryChannel != 0 { // HT Op was parsed
+				if info.ParsedHTCaps.OperatingAt40MHz {
+					info.Bandwidth = "40MHz"
+				} else {
 					info.Bandwidth = "20MHz"
 				}
+			} else if info.RadiotapMCSBw == 1 { // Fallback to Radiotap if no HT Op
+				info.Bandwidth = "40MHz"
+			} else {
+				info.Bandwidth = "20MHz"
 			}
-			// Alternative inference from supportedChannelWidthSet if available
-			if info.ParsedVHTCaps.SupportedChannelWidthSet >= 1 && info.Bandwidth == "" {
-				switch info.ParsedVHTCaps.SupportedChannelWidthSet {
-				case 1:
-					info.Bandwidth = "80MHz"
-				case 2, 3:
-					info.Bandwidth = "160MHz"
-				}
-			}
-		}
-
-		if info.RadiotapVHTShortGI {
-			info.IsShortGI = true
 		} else {
-			// Can potentially infer Short GI from VHT Capabilities
-			if info.ParsedVHTCaps.ShortGI80MHz || info.ParsedVHTCaps.ShortGI160MHz {
-				info.IsShortGI = true
-			}
+			info.Bandwidth = info.ParsedVHTCaps.ChannelWidth + "MHz"
 		}
+		foundBandwidth = true
 	}
 
-	// HE Capabilities (Less Simplified)
-	if heMacCapsStr := getString(row, "wlan.ext_tag.he_mac_caps"); heMacCapsStr != "" {
-		info.ParsedHECaps = &HECapabilityInfo{}
-		info.ParsedHECaps.BSSColor = getString(row, "wlan.ext_tag.bss_color_information.bss_color")
-
-		// Parse HE MAC capabilities
-		if val, e := getBool(row, "wlan.ext_tag.he_mac_cap.htc_he_support"); e == nil {
-			info.ParsedHECaps.HTCHESupport = val
-		}
-
-		if val, e := getBool(row, "wlan.ext_tag.he_mac_cap.twt_req_support"); e == nil {
-			info.ParsedHECaps.TwtRequesterSupport = val
-		}
-
-		if val, e := getBool(row, "wlan.ext_tag.he_mac_cap.twt_rsp_support"); e == nil {
-			info.ParsedHECaps.TwtResponderSupport = val
-		}
-
-		// Parse HE PHY capabilities
-		if val, e := getBool(row, "wlan.ext_tag.he_phy_cap.su_beamformer"); e == nil {
-			info.ParsedHECaps.SUBeamformer = val
-		}
-
-		if val, e := getBool(row, "wlan.ext_tag.he_phy_cap.su_beamformee"); e == nil {
-			info.ParsedHECaps.SUBeamformee = val
-		}
-
-		// 解析HE通道宽度相关能力
-		if val, e := getBool(row, "wlan.ext_tag.he_phy_cap.chan_width_set.160_in_5ghz"); e == nil {
-			info.ParsedHECaps.ChannelWidth160MHz = val
-		}
-
-		if val, e := getBool(row, "wlan.ext_tag.he_phy_cap.chan_width_set.160_80_80_in_5ghz"); e == nil {
-			info.ParsedHECaps.ChannelWidth80Plus80MHz = val
-		}
-
-		if val, e := getBool(row, "wlan.ext_tag.he_phy_cap.chan_width_set.40_80_in_5ghz"); e == nil {
-			info.ParsedHECaps.ChannelWidth40_80MHzIn5G = val
-		}
-
-		// Parse HE MCS sets
-		if val, e := getUint8(row, "wlan.ext_tag.he_operation.max_he_mcs_for_1_ss"); e == nil {
-			info.ParsedHECaps.MaxMCSForOneSS = val
-		}
-
-		if val, e := getUint8(row, "wlan.ext_tag.he_operation.max_he_mcs_for_2_ss"); e == nil {
-			info.ParsedHECaps.MaxMCSForTwoSS = val
-		}
-
-		if val, e := getUint8(row, "wlan.ext_tag.he_operation.max_he_mcs_for_3_ss"); e == nil {
-			info.ParsedHECaps.MaxMCSForThreeSS = val
-		}
-
-		if val, e := getUint8(row, "wlan.ext_tag.he_operation.max_he_mcs_for_4_ss"); e == nil {
-			info.ParsedHECaps.MaxMCSForFourSS = val
-		}
-
-		if val, e := getUint16(row, "wlan.ext_tag.he_mcs_map.rx_he_mcs_map_lte_80"); e == nil {
-			info.ParsedHECaps.RxHEMCSMap = val
-		}
-
-		if val, e := getUint16(row, "wlan.ext_tag.he_mcs_map.tx_he_mcs_map_lte_80"); e == nil {
-			info.ParsedHECaps.TxHEMCSMap = val
-		}
-
-		// 带宽判断逻辑：从HE能力推断带宽
-		// 优先使用radiotap.he.bw（如果存在）
-		heBw := info.RadiotapHEBw
-		if strings.Contains(heBw, "160MHz") {
-			info.Bandwidth = "160MHz"
-		} else if strings.Contains(heBw, "80MHz") {
-			info.Bandwidth = "80MHz"
-		} else if strings.Contains(heBw, "40MHz") {
+	// 2. HT Operation IE (If no VHT Operation)
+	if !foundBandwidth && info.ParsedHTCaps != nil && info.ParsedHTCaps.PrimaryChannel != 0 { // PrimaryChannel check indicates HT Op was likely parsed
+		if info.ParsedHTCaps.OperatingAt40MHz { // This flag is now set by parseHTOperationIE
 			info.Bandwidth = "40MHz"
-		} else if strings.Contains(heBw, "20MHz") {
+		} else {
 			info.Bandwidth = "20MHz"
+		}
+		foundBandwidth = true
+	}
+
+	// 3. VHT Capabilities IE (If no Operation IEs)
+	if !foundBandwidth && info.ParsedVHTCaps != nil {
+		// SupportedChannelWidthSet from VHT Caps: 0 (20/40), 1 (80), 2 (160/80+80)
+		// This is complex; for now, if VHT caps are present, rely on Radiotap or default to 20/40 from Radiotap.
+		if info.RadiotapMCSBw == 1 { // Radiotap says 40MHz
+			info.Bandwidth = "40MHz"
 		} else {
-			// 如果radiotap未提供HE带宽信息，从HE能力推断
-			if info.ParsedHECaps.ChannelWidth160MHz {
-				info.Bandwidth = "160MHz"
-			} else if info.ParsedHECaps.ChannelWidth80Plus80MHz {
-				info.Bandwidth = "80+80MHz"
-			} else if info.ParsedHECaps.ChannelWidth40_80MHzIn5G {
-				// 如果支持5G中的40MHz和80MHz，默认使用最高的能力
-				info.Bandwidth = "80MHz"
-			}
+			info.Bandwidth = "20MHz"
 		}
+		// A more detailed VHT Cap check would look at info.ParsedVHTCaps.SupportedChannelWidthSet
+		foundBandwidth = true
+	}
 
-		// 处理HE短保护间隔
-		heGI := info.RadiotapHEGI
-		if heGI != "" && heGI != "0.8us" {
-			info.IsShortGI = true
+	// 4. HT Capabilities IE (If only HT Capabilities)
+	if !foundBandwidth && info.ParsedHTCaps != nil {
+		if info.ParsedHTCaps.ChannelWidth40MHz { // From HT Capabilities IE
+			info.Bandwidth = "40MHz"
 		} else {
-			// 可以从HE MAC Caps字符串推断Short GI
-			if strings.Contains(heMacCapsStr, "Short GI") {
-				info.IsShortGI = true
-			}
+			info.Bandwidth = "20MHz"
 		}
+		foundBandwidth = true
 	}
 
-	// 5.6. Throughput calculation parameters
-	info.TransportPayloadLength = -1 // Default if not found
-	fieldName = "ip.len"
-	rawValue = getString(row, fieldName)
-	if val, e := getInt(row, fieldName); e == nil {
-		info.TransportPayloadLength = val
-		// Further checks for tcp.len or udp.length can be added here with similar logging
-	} else if rawValue != "" {
-		// Try ipv6.plen if ip.len failed or was not present
-		fieldName = "ipv6.plen"
-		rawValue = getString(row, fieldName)
-		if valIPv6, eIPv6 := getInt(row, fieldName); eIPv6 == nil {
-			info.TransportPayloadLength = valIPv6
-		} else if rawValue != "" {
-			// logger.Log.Debug().Msgf("DEBUG_PARSE_FIELD_OPTIONAL_ERROR: Optional field '%s' with value '%s' failed to parse: %v", fieldName, rawValue, eIPv6)
+	// 5. Radiotap Fallback (If no relevant IEs parsed or they don't specify width)
+	if !foundBandwidth {
+		if info.RadiotapMCSBw == 1 { // 1 for 40MHz from Radiotap MCS flags
+			info.Bandwidth = "40MHz"
+		} else {
+			info.Bandwidth = "20MHz"
 		}
+		foundBandwidth = true // Or consider it a default rather than found
 	}
 
-	// 5.7. Frame duration/airtime calculation parameters
-	fieldName = "wlan.duration"
-	rawValue = getString(row, fieldName)
-	if val, e := getUint16(row, fieldName); e == nil {
-		info.MACDurationID = val
-	} else if rawValue != "" {
-		// Don't add to parseErrors, let it be default.
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_ERROR: Failed to parse field '%s' with value '%s' (will use default): %v", fieldName, rawValue, e)
+	// 6. Default (Should ideally be covered by Radiotap fallback)
+	// if !foundBandwidth { // Should not happen if Radiotap fallback is comprehensive
+	// 	info.Bandwidth = "20MHz"
+	// }
+
+	if dot11.Flags.WEP() {
+		info.Security = "WEP"
+	} else if info.Security == "" {
+		info.Security = "Open/Unknown"
 	}
 
-	// 带宽优先级：HE > VHT > HT
-	// 确保最终带宽使用最高标准支持的宽度
-	if info.ParsedHECaps != nil {
-		// HE已经设置了带宽，优先级最高
-		// 在HE部分已经处理
-	} else if info.ParsedVHTCaps != nil {
-		// 如果没有HE带宽信息，使用VHT带宽
-		// 在VHT部分已经处理
-	} else if info.ParsedHTCaps != nil {
-		// 如果既没有HE也没有VHT带宽信息，使用HT带宽
-		// 在HT部分已经处理
-	}
-
-	// 确保带宽信息始终有值
-	if info.Bandwidth == "" {
-		info.Bandwidth = "20MHz" // 默认值
-	}
-
-	if len(parseErrors) > 0 {
-		// Combined error log for all parsing issues in this row
-		// logger.Log.Debug().Msgf("DEBUG_PARSE_ROW_ERRORS: Errors parsing frame row: %s. Raw row: %v", strings.Join(parseErrors, "; "), row)
-		return info, fmt.Errorf("errors parsing frame row: %s", strings.Join(parseErrors, "; "))
-	}
-
-	// logger.Log.Debug().Msgf("DEBUG_PARSED_FRAME: Successfully parsed frame: Timestamp=%s, SA=%s, DA=%s, BSSID=%s, SSID='%s', Signal=%d, FrameType=%s, Channel=%d, BW=%s",
-	// 	info.Timestamp.Format(time.RFC3339Nano),
-	// 	info.SA, info.DA, info.BSSID, info.SSID, info.SignalStrength, info.FrameType, info.Channel, info.Bandwidth)
 	return info, nil
 }
 
-// ProcessPcapFile is the main entry point for parsing a pcap file using tshark.
-func ProcessPcapFile(pcapFilePath string, tsharkPath string, pktHandler PacketInfoHandler) error {
-	// Define all necessary tshark fields based on the specification
-	fields := []string{
-		"frame.time_epoch", "frame.len", "frame.cap_len", "wlan.fc.type_subtype",
-		"wlan.fc.type", "wlan.fc.subtype", "wlan.fc.retry", // Corrected: wlan.flags.retry -> wlan.fc.retry
-		"wlan.ra", "wlan.da", "wlan.ta", "wlan.sa", "wlan.bssid",
-		"radiotap.channel.freq", "radiotap.dbm_antsignal", "radiotap.dbm_antnoise",
-		"radiotap.datarate", "radiotap.mcs.index", "radiotap.mcs.bw", "radiotap.mcs.gi",
-		"radiotap.vht.bw", "radiotap.vht.gi", "wlan_radio.data_rate", "wlan.supported_rates",
-		"wlan.ssid", "wlan.fixed.beacon", "wlan.fixed.capabilities.ess", "wlan.fixed.capabilities.ibss", "wlan.fixed.capabilities.privacy",
-		"wlan.ds.current_channel", "wlan.country_info.code",
-		"wlan.rsn.akms.type", "wlan.rsn.pcs.type", "wlan.rsn.gcs.type",
+// --- Information Element Parsers ---
 
-		// HT Capabilities
-		"wlan.ht.capabilities", "wlan.ht.info.primarychannel", "wlan.ht.info.secchanoffset",
-		"wlan.ht.capabilities.ldpccoding", "wlan.ht.capabilities.width",
-		"wlan.ht.capabilities.sm", "wlan.ht.capabilities.green",
-		"wlan.ht.capabilities.short20", "wlan.ht.capabilities.short40",
-		"wlan.ht.capabilities.txstbc", "wlan.ht.capabilities.rxstbc",
-		"wlan.ht.capabilities.delayedblockack", "wlan.ht.capabilities.amsdu",
-		"wlan.ht.capabilities.dsscck", "wlan.ht.capabilities.psmp",
-		"wlan.ht.capabilities.40mhzintolerant", "wlan.ht.capabilities.lsig",
-		"wlan.ht.ampduparam.maxlength", "wlan.ht.ampduparam.mpdudensity",
-		"wlan.ht.mcsset.rxbitmask.0to7", "wlan.ht.mcsset.rxbitmask.8to15",
-		"wlan.ht.mcsset.rxbitmask.16to23", "wlan.ht.mcsset.rxbitmask.24to31",
+// parseHTCapabilitiesIE parses the HT Capabilities information element.
+// Reference: IEEE 802.11-2016, Section 9.4.2.56 (HT Capabilities element)
+// Reference: gopacket-80211.md for field details
+func parseHTCapabilitiesIE(info *ParsedFrameInfo, ieData []byte) {
+	if info.ParsedHTCaps == nil {
+		info.ParsedHTCaps = &HTCapabilityInfo{}
+	}
+	logger.Log.Debug().Int("ht_cap_ie_len", len(ieData)).Msg("Parsing HT Capabilities IE")
 
-		// VHT Capabilities
-		"wlan.vht.capabilities", "wlan.vht.op.channelwidth", "wlan.vht.op.channelcenter0", "wlan.vht.op.channelcenter1",
-		"wlan.vht.capabilities.maxmpdulength", "wlan.vht.capabilities.supportedchanwidthset",
-		"wlan.vht.capabilities.rxldpc", "wlan.vht.capabilities.short80", "wlan.vht.capabilities.short160",
-		"wlan.vht.capabilities.txstbc", "wlan.vht.capabilities.rxstbc",
-		"wlan.vht.capabilities.subeamformer", "wlan.vht.capabilities.subeamformee",
-		"wlan.vht.capabilities.beamformee_sts_cap", "wlan.vht.capabilities.soundingdimensions",
-		"wlan.vht.capabilities.mubeamformer", "wlan.vht.capabilities.mubeamformee",
-		"wlan.vht.capabilities.vhttxopps", "wlan.vht.capabilities.vhthtc",
-		"wlan.vht.capabilities.maxampdu", "wlan.vht.capabilities.linkadapt",
-		"wlan.vht.capabilities.rxpatconsist", "wlan.vht.capabilities.txpatconsist",
-		"wlan.vht.mcsset.rxmcsmap", "wlan.vht.mcsset.rxhighestlonggirate",
-		"wlan.vht.mcsset.txmcsmap", "wlan.vht.mcsset.txhighestlonggirate",
-
-		// HE Capabilities - 仅使用示例JSON中确认存在的字段
-		"wlan.ext_tag.he_mac_caps", "wlan.ext_tag.he_mac_cap.htc_he_support",
-		"wlan.ext_tag.he_mac_cap.twt_req_support", "wlan.ext_tag.he_mac_cap.twt_rsp_support",
-		"wlan.ext_tag.he_operation.max_he_mcs_for_1_ss", "wlan.ext_tag.he_operation.max_he_mcs_for_2_ss",
-		"wlan.ext_tag.he_operation.max_he_mcs_for_3_ss", "wlan.ext_tag.he_operation.max_he_mcs_for_4_ss",
-		"wlan.ext_tag.he_mcs_map.rx_he_mcs_map_lte_80", "wlan.ext_tag.he_mcs_map.tx_he_mcs_map_lte_80",
-		"wlan.ext_tag.he_phy_cap.su_beamformer", "wlan.ext_tag.he_phy_cap.su_beamformee",
-		"wlan.ext_tag.bss_color_information.bss_color",
-		// 使用示例中确认存在的HE通道宽度相关字段
-		"wlan.ext_tag.he_phy_cap.chan_width_set.160_in_5ghz",
-		"wlan.ext_tag.he_phy_cap.chan_width_set.160_80_80_in_5ghz",
-		"wlan.ext_tag.he_phy_cap.chan_width_set.40_80_in_5ghz",
-
-		"wlan.tim.dtim_count", "wlan.tim.dtim_period", "wlan.tim.bmapctl.multicast",
-		"ip.len", "ipv6.plen", "tcp.len", "udp.length", "wlan.qos.tid",
-		"wlan.duration",
+	if len(ieData) < 2 { // Minimum: HT Capabilities Information field (2 bytes)
+		logger.Log.Warn().Msg("HT Capabilities IE too short for HT Capability Info field.")
+		return
 	}
 
-	executor := &TSharkExecutor{}
-	stdout, stderr, err := executor.Start(pcapFilePath, tsharkPath, fields)
-	if err != nil {
-		return fmt.Errorf("failed to start tshark executor: %w", err)
+	// HT Capabilities Information field (2 bytes, little-endian)
+	htCapInfoField := binary.LittleEndian.Uint16(ieData[0:2])
+	info.ParsedHTCaps.LDPCCoding = (htCapInfoField & (1 << 0)) != 0
+	info.ParsedHTCaps.ChannelWidth40MHz = (htCapInfoField & (1 << 1)) != 0 // Bit 1: Supported Channel Width Set (0: 20MHz only, 1: 20/40MHz)
+	// SMPS (Spatial Multiplexing Power Save) (bits 2-3)
+	// info.ParsedHTCaps.SMPSMode = (htCapInfoField >> 2) & 0x03
+	info.ParsedHTCaps.ShortGI20MHz = (htCapInfoField & (1 << 5)) != 0
+	info.ParsedHTCaps.ShortGI40MHz = (htCapInfoField & (1 << 6)) != 0
+	info.ParsedHTCaps.TxSTBC = (htCapInfoField & (1 << 7)) != 0
+	info.ParsedHTCaps.RxSTBC = uint8((htCapInfoField >> 8) & 0x03) // Bits 8-9: Rx STBC
+	info.ParsedHTCaps.HTDelayedBlockAck = (htCapInfoField & (1 << 10)) != 0
+	// Max A-MSDU Length (bit 11): 0 for 3839 bytes, 1 for 7935 bytes
+	if (htCapInfoField & (1 << 11)) != 0 {
+		info.ParsedHTCaps.MaxAMSDULength = 7935
+	} else {
+		info.ParsedHTCaps.MaxAMSDULength = 3839
 	}
-	defer executor.Stop()
+	info.ParsedHTCaps.DSSCck = (htCapInfoField & (1 << 12)) != 0 // DSSS/CCK Mode in 40 MHz (Bit 12)
+	// Bit 13 is reserved
+	info.ParsedHTCaps.FortyMhzIntolerant = (htCapInfoField & (1 << 14)) != 0 // Bit 14: 40 MHz Intolerant
+	// Bit 15: L-SIG TXOP Protection Support
 
-	// Goroutine to log stderr from tshark
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			logger.Log.Warn().Msgf("TSHARK_STDERR: %s", scanner.Text())
-		}
-		if err := scanner.Err(); err != nil {
-			logger.Log.Error().Err(err).Msgf("ERROR_TSHARK_STDERR_SCAN")
-		}
-	}()
+	currentIndex := 2
 
-	csvParser, err := NewCSVParser(stdout)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV parser: %w", err)
-	}
-
-	frameProcessor := NewFrameProcessor(csvParser.HeaderMap)
-	frameCount := 0
-	errorCount := 0
-
-	// log.Println("INFO_PCAP_PROCESS: Starting to process frames from tshark output...")
-	for {
-		row, err := csvParser.ReadFrame()
-		if err == io.EOF {
-			// log.Println("INFO_PCAP_PROCESS: EOF reached in tshark CSV output.")
-			break
-		}
-		if err != nil {
-			logger.Log.Error().Err(err).Msgf("ERROR_PCAP_PROCESS: Failed to read/parse CSV row")
-			errorCount++
-			if errorCount > 100 && float64(errorCount)/float64(frameCount+errorCount) > 0.5 {
-				logger.Log.Error().Msgf("ERROR_PCAP_PROCESS: High error rate (%d errors in %d attempts), stopping.", errorCount, frameCount+errorCount)
-				return fmt.Errorf("too many CSV parsing errors")
-			}
-			continue // Skip this problematic row
-		}
-
-		parsedInfo, procErr := frameProcessor.ProcessRow(row)
-		if procErr != nil {
-			logger.Log.Warn().Err(procErr).Msgf("WARN_FRAME_PROCESS: Failed to process frame row. Raw row: %v", row)
-			// Optionally, log only a subset of raw row if too verbose
-			errorCount++
-			continue // Skip this frame
-		}
-
-		if parsedInfo != nil {
-			pktHandler(parsedInfo)
-		}
-		frameCount++
-		if frameCount%1000 == 0 {
-			logger.Log.Info().Msgf("INFO_PCAP_PROCESS: Processed %d frames...", frameCount)
-		}
+	// A-MPDU Parameters (1 byte)
+	if len(ieData) >= currentIndex+1 {
+		ampduParams := ieData[currentIndex]
+		// Max A-MPDU Length Exponent (bits 0-1) -> 2^(13 + exponent) - 1 bytes
+		maxRxAMPDUExp := ampduParams & 0x03
+		info.ParsedHTCaps.MaxAMPDULength = (1 << (13 + maxRxAMPDUExp)) - 1
+		// MPDU Density (bits 2-4)
+		// info.ParsedHTCaps.MPDUDensity = (ampduParams >> 2) & 0x07
+		currentIndex++
+	} else {
+		logger.Log.Warn().Msg("HT Capabilities IE too short for A-MPDU Parameters.")
+		// Not returning, as MCS set might still be parsable if length is non-standard
 	}
 
-	logger.Log.Info().Msgf("INFO_PCAP_PROCESS: Finished processing. Total frames processed: %d, Errors: %d", frameCount, errorCount)
-	return nil
+	// Supported MCS Set (16 bytes)
+	// Rx MCS Bitmask (78 bits = 10 bytes), Tx MCS Set Defined (1 bit), Tx Rx MCS Set Not Equal (1 bit), Max Spatial Streams Supported (2 bits), etc.
+	if len(ieData) >= currentIndex+16 {
+		info.ParsedHTCaps.SupportedMCSSet = make([]byte, 16)
+		copy(info.ParsedHTCaps.SupportedMCSSet, ieData[currentIndex:currentIndex+16])
+		currentIndex += 16
+	} else {
+		logger.Log.Warn().Msg("HT Capabilities IE too short for full Supported MCS Set.")
+	}
+
+	// HT Extended Capabilities (2 bytes) - if present
+	if len(ieData) >= currentIndex+2 {
+		// extHtCapInfo := binary.LittleEndian.Uint16(ieData[currentIndex:currentIndex+2])
+		// PCO (Phased Coexistence Operation) (bit 0)
+		// TDC (Transmit Diversity MCSs) (bit 1)
+		// MCS Feedback (bits 8-9)
+		// ... and others
+		currentIndex += 2
+	}
+
+	// Transmit Beamforming Capabilities (4 bytes) - if present
+	if len(ieData) >= currentIndex+4 {
+		// txBFCap := binary.LittleEndian.Uint32(ieData[currentIndex:currentIndex+4])
+		// ... many bitfields ...
+		currentIndex += 4
+	}
+
+	// Antenna Selection Capabilities (1 byte) - if present
+	if len(ieData) >= currentIndex+1 {
+		// aselCap := ieData[currentIndex]
+		// ... bitfields ...
+		currentIndex++
+	}
+
+	logger.Log.Debug().Interface("parsed_ht_caps", info.ParsedHTCaps).Msg("HT Capabilities IE Parsed")
 }
 
-// ProcessPcapStream is the main entry point for parsing a pcap stream using tshark.
-func ProcessPcapStream(pcapStream io.Reader, tsharkPath string, pktHandler PacketInfoHandler) error {
-	// Define all necessary tshark fields based on the specification
-	fields := []string{
-		"frame.time_epoch", "frame.len", "frame.cap_len", "wlan.fc.type_subtype",
-		"wlan.fc.type", "wlan.fc.subtype", "wlan.fc.retry", // Corrected: wlan.flags.retry -> wlan.fc.retry
-		"wlan.ra", "wlan.da", "wlan.ta", "wlan.sa", "wlan.bssid",
-		"radiotap.channel.freq", "radiotap.dbm_antsignal", "radiotap.dbm_antnoise",
-		"radiotap.datarate", "radiotap.mcs.index", "radiotap.mcs.bw", "radiotap.mcs.gi",
-		"radiotap.vht.bw", "radiotap.vht.gi", "wlan_radio.data_rate", "wlan.supported_rates",
-		"wlan.ssid", "wlan.fixed.beacon", "wlan.fixed.capabilities.ess", "wlan.fixed.capabilities.ibss", "wlan.fixed.capabilities.privacy",
-		"wlan.ds.current_channel", "wlan.country_info.code",
-		"wlan.rsn.akms.type", "wlan.rsn.pcs.type", "wlan.rsn.gcs.type",
+// parseVHTCapabilitiesIE parses the VHT Capabilities information element.
+// Reference: IEEE 802.11-2016, Section 9.4.2.158 (VHT Capabilities element)
+// Reference: gopacket-80211.md for field details
+func parseVHTCapabilitiesIE(info *ParsedFrameInfo, ieData []byte) {
+	if info.ParsedVHTCaps == nil {
+		info.ParsedVHTCaps = &VHTCapabilityInfo{}
+	}
+	logger.Log.Debug().Int("vht_cap_ie_len", len(ieData)).Msg("Parsing VHT Capabilities IE")
 
-		// HT Capabilities
-		"wlan.ht.capabilities", "wlan.ht.info.primarychannel", "wlan.ht.info.secchanoffset",
-		"wlan.ht.capabilities.ldpccoding", "wlan.ht.capabilities.width",
-		"wlan.ht.capabilities.sm", "wlan.ht.capabilities.green",
-		"wlan.ht.capabilities.short20", "wlan.ht.capabilities.short40",
-		"wlan.ht.capabilities.txstbc", "wlan.ht.capabilities.rxstbc",
-		"wlan.ht.capabilities.delayedblockack", "wlan.ht.capabilities.amsdu",
-		"wlan.ht.capabilities.dsscck", "wlan.ht.capabilities.psmp",
-		"wlan.ht.capabilities.40mhzintolerant", "wlan.ht.capabilities.lsig",
-		"wlan.ht.ampduparam.maxlength", "wlan.ht.ampduparam.mpdudensity",
-		"wlan.ht.mcsset.rxbitmask.0to7", "wlan.ht.mcsset.rxbitmask.8to15",
-		"wlan.ht.mcsset.rxbitmask.16to23", "wlan.ht.mcsset.rxbitmask.24to31",
-
-		// VHT Capabilities
-		"wlan.vht.capabilities", "wlan.vht.op.channelwidth", "wlan.vht.op.channelcenter0", "wlan.vht.op.channelcenter1",
-		"wlan.vht.capabilities.maxmpdulength", "wlan.vht.capabilities.supportedchanwidthset",
-		"wlan.vht.capabilities.rxldpc", "wlan.vht.capabilities.short80", "wlan.vht.capabilities.short160",
-		"wlan.vht.capabilities.txstbc", "wlan.vht.capabilities.rxstbc",
-		"wlan.vht.capabilities.subeamformer", "wlan.vht.capabilities.subeamformee",
-		"wlan.vht.capabilities.beamformee_sts_cap", "wlan.vht.capabilities.soundingdimensions",
-		"wlan.vht.capabilities.mubeamformer", "wlan.vht.capabilities.mubeamformee",
-		"wlan.vht.capabilities.vhttxopps", "wlan.vht.capabilities.vhthtc",
-		"wlan.vht.capabilities.maxampdu", "wlan.vht.capabilities.linkadapt",
-		"wlan.vht.capabilities.rxpatconsist", "wlan.vht.capabilities.txpatconsist",
-		"wlan.vht.mcsset.rxmcsmap", "wlan.vht.mcsset.rxhighestlonggirate",
-		"wlan.vht.mcsset.txmcsmap", "wlan.vht.mcsset.txhighestlonggirate",
-
-		// HE Capabilities - 仅使用示例JSON中确认存在的字段
-		"wlan.ext_tag.he_mac_caps", "wlan.ext_tag.he_mac_cap.htc_he_support",
-		"wlan.ext_tag.he_mac_cap.twt_req_support", "wlan.ext_tag.he_mac_cap.twt_rsp_support",
-		"wlan.ext_tag.he_operation.max_he_mcs_for_1_ss", "wlan.ext_tag.he_operation.max_he_mcs_for_2_ss",
-		"wlan.ext_tag.he_operation.max_he_mcs_for_3_ss", "wlan.ext_tag.he_operation.max_he_mcs_for_4_ss",
-		"wlan.ext_tag.he_mcs_map.rx_he_mcs_map_lte_80", "wlan.ext_tag.he_mcs_map.tx_he_mcs_map_lte_80",
-		"wlan.ext_tag.he_phy_cap.su_beamformer", "wlan.ext_tag.he_phy_cap.su_beamformee",
-		"wlan.ext_tag.bss_color_information.bss_color",
-		// 使用示例中确认存在的HE通道宽度相关字段
-		"wlan.ext_tag.he_phy_cap.chan_width_set.160_in_5ghz",
-		"wlan.ext_tag.he_phy_cap.chan_width_set.160_80_80_in_5ghz",
-		"wlan.ext_tag.he_phy_cap.chan_width_set.40_80_in_5ghz",
-
-		"wlan.tim.dtim_count", "wlan.tim.dtim_period", "wlan.tim.bmapctl.multicast",
-		"ip.len", "ipv6.plen", "tcp.len", "udp.length", "wlan.qos.tid",
-		"wlan.duration",
+	// IE length for VHT Capabilities is typically 12 bytes
+	if len(ieData) < 12 { // VHT Capabilities Info (4 bytes) + Supported VHT-MCS and NSS Set (8 bytes)
+		logger.Log.Warn().Msg("VHT Capabilities IE too short for mandatory fields.")
+		return
 	}
 
-	executor := &TSharkExecutor{}
-	// Use StartStream instead of Start
-	stdout, stderr, err := executor.StartStream(pcapStream, tsharkPath, fields)
-	if err != nil {
-		return fmt.Errorf("failed to start tshark executor for stream: %w", err)
-	}
-	defer executor.Stop()
+	// VHT Capabilities Info (4 bytes, little-endian)
+	vhtCapInfo := binary.LittleEndian.Uint32(ieData[0:4])
+	info.ParsedVHTCaps.MaxMPDULength = uint8(vhtCapInfo & 0x03)                   // Bits 0-1
+	info.ParsedVHTCaps.SupportedChannelWidthSet = uint8((vhtCapInfo >> 2) & 0x03) // Bits 2-3. 0: 80MHz, 1: 160MHz, 2: 160MHz (80+80), 3: reserved
+	info.ParsedVHTCaps.RxLDPC = (vhtCapInfo & (1 << 4)) != 0
+	info.ParsedVHTCaps.ShortGI80MHz = (vhtCapInfo & (1 << 5)) != 0
+	info.ParsedVHTCaps.ShortGI160MHz = (vhtCapInfo & (1 << 6)) != 0 // Also for 80+80 MHz
+	info.ParsedVHTCaps.TxSTBC = (vhtCapInfo & (1 << 7)) != 0
+	info.ParsedVHTCaps.RxSTBC = uint8((vhtCapInfo >> 8) & 0x07) // Bits 8-10
+	info.ParsedVHTCaps.SUBeamformerCapable = (vhtCapInfo & (1 << 11)) != 0
+	info.ParsedVHTCaps.SUBeamformee = (vhtCapInfo & (1 << 12)) != 0
+	info.ParsedVHTCaps.BeamformeeSTS = uint8((vhtCapInfo >> 13) & 0x07)      // Bits 13-15: Beamformee STS Capability
+	info.ParsedVHTCaps.SoundingDimensions = uint8((vhtCapInfo >> 16) & 0x07) // Bits 16-18: Number of Sounding Dimensions
+	info.ParsedVHTCaps.MUBeamformerCapable = (vhtCapInfo & (1 << 19)) != 0
+	info.ParsedVHTCaps.MUBeamformee = (vhtCapInfo & (1 << 20)) != 0
+	info.ParsedVHTCaps.VHTTXOPPSCapability = (vhtCapInfo & (1 << 21)) != 0  // VHT TXOP PS
+	info.ParsedVHTCaps.VHTHTCCapability = (vhtCapInfo & (1 << 22)) != 0     // +HTC-VHT Capable
+	info.ParsedVHTCaps.MaxAMPDULengthExp = uint8((vhtCapInfo >> 23) & 0x07) // Bits 23-25: Max A-MPDU Length Exponent
+	// Bits 26-27: VHT Link Adaptation Capable
+	info.ParsedVHTCaps.RxPatternConsistency = (vhtCapInfo & (1 << 28)) != 0 // Rx Antenna Pattern Consistency
+	info.ParsedVHTCaps.TxPatternConsistency = (vhtCapInfo & (1 << 29)) != 0 // Tx Antenna Pattern Consistency
 
-	// Goroutine to log stderr from tshark
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			logger.Log.Warn().Msgf("TSHARK_STDERR_STREAM: %s", scanner.Text())
-		}
-		if err := scanner.Err(); err != nil {
-			logger.Log.Error().Err(err).Msgf("ERROR_TSHARK_STDERR_STREAM_SCAN")
-		}
-	}()
+	// Supported VHT-MCS and NSS Set (8 bytes)
+	// Rx VHT-MCS Map (2 bytes)
+	info.ParsedVHTCaps.RxMCSMap = binary.LittleEndian.Uint16(ieData[4:6])
+	// Rx Highest VHT Data Rate (2 bytes, but only 13 bits used)
+	info.ParsedVHTCaps.RxHighestLongGIRate = binary.LittleEndian.Uint16(ieData[6:8]) & 0x1FFF // Mask for 13 bits
 
-	csvParser, err := NewCSVParser(stdout)
-	if err != nil {
-		return fmt.Errorf("failed to create CSV parser for stream: %w", err)
-	}
+	// Tx VHT-MCS Map (2 bytes)
+	info.ParsedVHTCaps.TxMCSMap = binary.LittleEndian.Uint16(ieData[8:10])
+	// Tx Highest VHT Data Rate (2 bytes, but only 13 bits used)
+	info.ParsedVHTCaps.TxHighestLongGIRate = binary.LittleEndian.Uint16(ieData[10:12]) & 0x1FFF // Mask for 13 bits
 
-	frameProcessor := NewFrameProcessor(csvParser.HeaderMap)
-	frameCount := 0
-	errorCount := 0
-
-	// log.Println("INFO_PCAP_STREAM_PROCESS: Starting to process frames from tshark stream output...")
-	for {
-		row, err := csvParser.ReadFrame()
-		if err == io.EOF {
-			// log.Println("INFO_PCAP_STREAM_PROCESS: EOF reached in tshark CSV stream output.")
-			break
-		}
-		if err != nil {
-			logger.Log.Error().Err(err).Msgf("ERROR_PCAP_STREAM_PROCESS: Failed to read/parse CSV row from stream")
-			errorCount++
-			if errorCount > 100 && float64(errorCount)/float64(frameCount+errorCount) > 0.5 {
-				logger.Log.Error().Msgf("ERROR_PCAP_STREAM_PROCESS: High error rate (%d errors in %d attempts) from stream, stopping.", errorCount, frameCount+errorCount)
-				return fmt.Errorf("too many CSV parsing errors from stream")
-			}
-			continue // Skip this problematic row
-		}
-
-		parsedInfo, procErr := frameProcessor.ProcessRow(row)
-		if procErr != nil {
-			logger.Log.Warn().Err(procErr).Msgf("WARN_FRAME_STREAM_PROCESS: Failed to process frame row from stream. Raw row: %v", row)
-			errorCount++
-			continue // Skip this frame
-		}
-
-		if parsedInfo != nil {
-			pktHandler(parsedInfo)
-		}
-		frameCount++
-		if frameCount%1000 == 0 {
-			logger.Log.Info().Msgf("INFO_PCAP_STREAM_PROCESS: Processed %d frames from stream...", frameCount)
-		}
-	}
-
-	logger.Log.Info().Msgf("INFO_PCAP_STREAM_PROCESS: Finished processing stream. Total frames processed: %d, Errors: %d", frameCount, errorCount)
-	return nil
+	logger.Log.Debug().Interface("parsed_vht_caps", info.ParsedVHTCaps).Msg("VHT Capabilities IE Parsed")
 }
 
-// getPHYRateMbps estimates the PHY rate in Mbps based on tshark fields.
-func getPHYRateMbps(info *ParsedFrameInfo) float64 {
-	// Priority: HE -> VHT -> HT -> Legacy (radiotap.datarate)
-	// This is a simplified MVP version. More complex rate calculations exist.
+// parseRSNIE parses the RSN (Robust Security Network) information element.
+// Reference: IEEE 802.11-2016, Section 9.4.2.25 (RSN element)
+// Reference: gopacket-80211.md for RSN structure and cipher/AKM suites
+func parseRSNIE(info *ParsedFrameInfo, ieData []byte) {
+	logger.Log.Debug().Int("ie_len", len(ieData)).Msg("Parsing RSN IE")
+	if len(ieData) < 2 { // Version (2 bytes)
+		logger.Log.Warn().Msg("RSN IE too short for Version.")
+		return
+	}
+	version := binary.LittleEndian.Uint16(ieData[0:2])
+	if version != 1 {
+		logger.Log.Warn().Uint16("rsn_version", version).Msg("Unsupported RSN version.")
+		return // Or handle differently if other versions become relevant
+	}
 
-	// VHT
-	if info.RadiotapVHTNSS > 0 && info.RadiotapVHTMCS <= 9 { // Max MCS for VHT is 9
-		nss := float64(info.RadiotapVHTNSS)
-		mcs := float64(info.RadiotapVHTMCS)
-		var baseRate float64
+	currentIndex := 2
+	var groupCipherStr string
+	pairwiseCiphers := []string{}
+	akms := []string{}
+	// var rsnCaps uint16 // For later if needed
 
-		// Determine base rate based on BW (simplified from 802.11ac tables)
-		// These are for single stream, MCS0, Long GI.
-		switch info.RadiotapVHTBw {
-		case "20":
-			baseRate = 6.5 // MCS0, 20MHz, NSS1, Long GI
-		case "40":
-			baseRate = 13.5 // MCS0, 40MHz, NSS1, Long GI
-		case "80":
-			baseRate = 29.3 // MCS0, 80MHz, NSS1, Long GI (approx)
-		case "160":
-			baseRate = 58.5 // MCS0, 160MHz, NSS1, Long GI (approx)
+	// Group Data Cipher Suite (4 bytes: OUI[3] + Suite Type[1])
+	if currentIndex+4 <= len(ieData) {
+		groupCipherStr = ouiAndCipherSuiteToString(ieData[currentIndex:currentIndex+3], ieData[currentIndex+3])
+		currentIndex += 4
+	} else {
+		logger.Log.Warn().Msg("RSN IE too short for Group Cipher Suite.")
+		return
+	}
+
+	// Pairwise Cipher Suite Count (2 bytes)
+	if currentIndex+2 <= len(ieData) {
+		pairwiseCipherCount := int(binary.LittleEndian.Uint16(ieData[currentIndex : currentIndex+2]))
+		currentIndex += 2
+		for i := 0; i < pairwiseCipherCount; i++ {
+			if currentIndex+4 <= len(ieData) {
+				cipherStr := ouiAndCipherSuiteToString(ieData[currentIndex:currentIndex+3], ieData[currentIndex+3])
+				pairwiseCiphers = append(pairwiseCiphers, cipherStr)
+				currentIndex += 4
+			} else {
+				logger.Log.Warn().Int("expected_pairwise_count", pairwiseCipherCount).Int("parsed_count", i).Msg("RSN IE ended prematurely while parsing Pairwise Cipher Suites.")
+				break
+			}
+		}
+	} else {
+		logger.Log.Warn().Msg("RSN IE too short for Pairwise Cipher Suite Count.")
+		return
+	}
+
+	// AKM Suite Count (2 bytes)
+	if currentIndex+2 <= len(ieData) {
+		akmSuiteCount := int(binary.LittleEndian.Uint16(ieData[currentIndex : currentIndex+2]))
+		currentIndex += 2
+		for i := 0; i < akmSuiteCount; i++ {
+			if currentIndex+4 <= len(ieData) {
+				akmStr := ouiAndAKMSuiteToString(ieData[currentIndex:currentIndex+3], ieData[currentIndex+3])
+				akms = append(akms, akmStr)
+				currentIndex += 4
+			} else {
+				logger.Log.Warn().Int("expected_akm_count", akmSuiteCount).Int("parsed_count", i).Msg("RSN IE ended prematurely while parsing AKM Suites.")
+				break
+			}
+		}
+	} else {
+		logger.Log.Warn().Msg("RSN IE too short for AKM Suite Count.")
+		return
+	}
+
+	// (Optional) RSN Capabilities (2 bytes) - parse if present and needed
+	// if currentIndex+2 <= len(ieData) {
+	// 	rsnCaps = binary.LittleEndian.Uint16(ieData[currentIndex : currentIndex+2])
+	// 	currentIndex += 2
+	// 	// Process rsnCaps, e.g., Pre-Auth (bit 0), No Pairwise (bit 1), PTKSA Replay Counter (bits 2-3), etc.
+	// }
+
+	// Determine overall security string
+	// This is a simplified logic. Real determination can be more complex based on combinations.
+	var finalAKM, finalPairwise string
+	if len(akms) > 0 {
+		// Prioritize known strong AKMs if multiple are present
+		for _, akm := range akms {
+			if akm == "SAE" || akm == "PSK" || akm == "802.1X" { // Add other relevant AKMs like FT-PSK, FT-802.1X
+				finalAKM = akm
+				break
+			}
+		}
+		if finalAKM == "" {
+			finalAKM = akms[0]
+		} // Fallback to first listed
+	}
+
+	if len(pairwiseCiphers) > 0 {
+		// Prioritize known strong ciphers
+		for _, pc := range pairwiseCiphers {
+			if pc == "CCMP-128" || pc == "GCMP-256" || pc == "CCMP-256" || pc == "GCMP-128" {
+				finalPairwise = pc
+				break
+			}
+		}
+		if finalPairwise == "" {
+			finalPairwise = pairwiseCiphers[0]
+		} // Fallback to first listed
+	}
+
+	if finalAKM != "" && finalPairwise != "" {
+		// Construct a common security string, e.g., WPA2-PSK-CCMP, WPA3-SAE-CCMP
+		securityName := ""
+		switch finalAKM {
+		case "PSK":
+			if finalPairwise == "CCMP-128" {
+				securityName = "WPA2-PSK"
+			} // Common assumption
+			// Add WPA-PSK if TKIP is primary pairwise
+		case "802.1X":
+			if finalPairwise == "CCMP-128" {
+				securityName = "WPA2-Enterprise"
+			}
+		case "SAE":
+			securityName = "WPA3-Personal"
+		// Add more cases for FT, OWE, etc.
 		default:
-			// Fall through if BW string is not recognized or empty
+			securityName = finalAKM // Use raw AKM if no specific WPAx name
 		}
-
-		if baseRate > 0 {
-			// Adjust for actual MCS (very simplified scaling)
-			// Real VHT rates depend on coding, modulation, etc.
-			rate := baseRate * (mcs + 1) / 1.0 * nss // Simplified: (MCS index + 1) * base for MCS0
-			if info.RadiotapVHTShortGI {
-				rate *= 1.11 // Approx 10-11% increase for Short GI
-			}
-			return rate
+		if securityName != "" {
+			info.Security = fmt.Sprintf("%s (%s)", securityName, finalPairwise)
+		} else {
+			info.Security = fmt.Sprintf("RSN AKM: %s, Pairwise: %s", strings.Join(akms, "/"), strings.Join(pairwiseCiphers, "/"))
 		}
+	} else if groupCipherStr != "" { // Fallback if somehow AKM/Pairwise are missing but group is there
+		info.Security = fmt.Sprintf("RSN Group: %s", groupCipherStr)
+	} else {
+		info.Security = "RSN (Unknown)" // Should not happen if RSN IE is valid
 	}
-
-	// HT
-	if info.RadiotapMCSIndex <= 31 { // HT MCS indices 0-31
-		mcs := float64(info.RadiotapMCSIndex)
-		var baseRate float64 = 6.5   // MCS0, 20MHz, NSS1, Long GI
-		if info.RadiotapMCSBw == 1 { // 40MHz
-			baseRate = 13.5 // MCS0, 40MHz, NSS1, Long GI
-		}
-		// Assuming NSS=1 for simplicity if not explicitly available for HT from tshark
-		// HT MCS rates are complex (e.g. MCS0-7 for NSS1, MCS8-15 for NSS2 etc.)
-		// This is a very rough estimate.
-		rate := baseRate * (mcs/8 + 1) // Very rough scaling by NSS group
-		if info.RadiotapMCSGI {        // Short GI
-			rate *= 1.11
-		}
-		return rate
-	}
-
-	// Legacy
-	if info.RadiotapDataRate > 0 {
-		return info.RadiotapDataRate // radiotap.datarate is already in Mbps
-	}
-
-	// Fallback
-	if info.FrameType != "" && strings.HasPrefix(info.FrameType, "Mgmt") {
-		return 6.0 // Common base rate for management frames
-	}
-	return 1.0 // Absolute fallback
+	logger.Log.Info().Str("parsed_security", info.Security).Msg("RSN IE Parsed")
 }
 
-// CalculateFrameAirtime estimates the airtime of a given 802.11 frame.
-// This is a simplified model.
-func CalculateFrameAirtime(frameLengthBytes int, phyRateMbps float64, isShortPreamble bool, isShortGI bool) time.Duration {
-	if phyRateMbps <= 0 {
-		return 0
+// parseHTOperationIE parses the HT Operation information element.
+// Reference: IEEE 802.11-2016, Section 9.4.2.57 (HT Operation element)
+func parseHTOperationIE(info *ParsedFrameInfo, ieData []byte) {
+	if info.ParsedHTCaps == nil { // HT Operation usually appears with HT Capabilities, but init just in case
+		info.ParsedHTCaps = &HTCapabilityInfo{}
 	}
-	dataTxTimeMicroseconds := float64(frameLengthBytes*8) / phyRateMbps
-	preamblePlcpTimeMicroseconds := 192.0 // Long Preamble
-	if isShortPreamble {
-		preamblePlcpTimeMicroseconds = 96.0
+	logger.Log.Debug().Int("ht_op_ie_len", len(ieData)).Msg("Parsing HT Operation IE")
+
+	if len(ieData) < 1 { // Primary Channel (1 byte)
+		logger.Log.Warn().Msg("HT Operation IE too short for Primary Channel.")
+		return
 	}
-	sifsMicroseconds := 10.0 // OFDM
-	giFactor := 1.0
-	if isShortGI {
-		giFactor = 0.9 // Approximation
+	info.ParsedHTCaps.PrimaryChannel = ieData[0]
+	currentIndex := 1
+
+	if len(ieData) < currentIndex+1 { // HT Operation Information (Byte 1 of 5-byte set)
+		logger.Log.Warn().Msg("HT Operation IE too short for HT Operation Information Set 1.")
+		return
 	}
-	totalMicroseconds := (preamblePlcpTimeMicroseconds + dataTxTimeMicroseconds*giFactor) + sifsMicroseconds
-	return time.Duration(totalMicroseconds * float64(time.Microsecond))
+	htOpInfoSet1 := ieData[currentIndex]
+	secondaryChanOffsetValue := htOpInfoSet1 & 0x03 // Bits 0-1: Secondary Channel Offset
+	switch secondaryChanOffsetValue {
+	case 0:
+		info.ParsedHTCaps.SecondaryChannelOffset = "None"
+	case 1:
+		info.ParsedHTCaps.SecondaryChannelOffset = "Above"
+	case 3:
+		info.ParsedHTCaps.SecondaryChannelOffset = "Below"
+	default:
+		info.ParsedHTCaps.SecondaryChannelOffset = "Reserved"
+	}
+
+	staChannelWidthIsAny := (htOpInfoSet1 >> 2) & 0x01 // Bit 2: STA Channel Width. 0 = 20MHz, 1 = Any (20MHz or 40MHz).
+
+	if staChannelWidthIsAny == 1 && (secondaryChanOffsetValue == 1 || secondaryChanOffsetValue == 3) {
+		info.ParsedHTCaps.OperatingAt40MHz = true
+	} else {
+		info.ParsedHTCaps.OperatingAt40MHz = false
+	}
+
+	currentIndex++
+	currentIndex += 4 // Skip over the rest of HT Operation Information (bytes 2,3,4,5 of the set)
+
+	if len(ieData) >= currentIndex+16 {
+		currentIndex += 16
+	}
+
+	logger.Log.Debug().Interface("parsed_ht_op_fields_in_ht_caps", info.ParsedHTCaps).Msg("HT Operation IE Parsed (relevant fields stored in ParsedHTCaps)")
 }
+
+// parseVHTOperationIE parses the VHT Operation information element.
+// Reference: IEEE 802.11-2016, Section 9.4.2.159 (VHT Operation element)
+func parseVHTOperationIE(info *ParsedFrameInfo, ieData []byte) {
+	if info.ParsedVHTCaps == nil { // VHT Operation usually appears with VHT Capabilities, but init just in case
+		info.ParsedVHTCaps = &VHTCapabilityInfo{}
+	}
+	logger.Log.Debug().Int("vht_op_ie_len", len(ieData)).Msg("Parsing VHT Operation IE")
+
+	// VHT Operation IE has a fixed length of 5 bytes if a narrower VHT CBW is used (e.g. 20/40MHz)
+	// or can be longer if wider CBWs are signaled with HE variants. Std length is 5.
+	if len(ieData) < 1 { // VHT Channel Width (1 byte)
+		logger.Log.Warn().Msg("VHT Operation IE too short for VHT Channel Width.")
+		return
+	}
+
+	// VHT Operation Info (1st byte): Channel Width
+	vhtOpChannelWidth := ieData[0]
+	// This field directly sets the operating channel width for VHT.
+	// It will be used by the main bandwidth determination logic.
+	switch vhtOpChannelWidth {
+	case 0: // Operates in 20MHz or 40MHz. Actual width determined by HT Operation element or other means.
+		// Store a temporary indicator or let main bandwidth logic handle this based on HT Op info.
+		info.ParsedVHTCaps.ChannelWidth = "20_40" // Special value to indicate it needs further check from HT Op
+	case 1:
+		info.ParsedVHTCaps.ChannelWidth = "80"
+	case 2:
+		info.ParsedVHTCaps.ChannelWidth = "160"
+	case 3:
+		info.ParsedVHTCaps.ChannelWidth = "80+80"
+	default:
+		if vhtOpChannelWidth >= 4 && vhtOpChannelWidth <= 255 { // As per IEEE 802.11-2016, Table 9-247
+			// These are reserved or might be for future/HE-variant operations if IE structure is overloaded.
+			// For pure VHT Operation IE (5 bytes), these are typically not used.
+			info.ParsedVHTCaps.ChannelWidth = fmt.Sprintf("ReservedVHTBW-%d", vhtOpChannelWidth)
+		} else {
+			info.ParsedVHTCaps.ChannelWidth = "Unknown"
+		}
+	}
+	currentIndex := 1
+
+	// VHT Operation Info (2nd byte): Channel Center Frequency Segment 0
+	if len(ieData) >= currentIndex+1 {
+		info.ParsedVHTCaps.ChannelCenter0 = ieData[currentIndex]
+		currentIndex++
+	} else {
+		logger.Log.Warn().Msg("VHT Operation IE too short for Channel Center Freq Seg 0.")
+		// Allow partial parse if only width was present
+		logger.Log.Debug().Interface("parsed_vht_op_fields_in_vht_caps", info.ParsedVHTCaps).Msg("VHT Operation IE Parsed (partially)")
+		return
+	}
+
+	// VHT Operation Info (3rd byte): Channel Center Frequency Segment 1
+	if len(ieData) >= currentIndex+1 {
+		info.ParsedVHTCaps.ChannelCenter1 = ieData[currentIndex]
+		currentIndex++
+	} else {
+		logger.Log.Warn().Msg("VHT Operation IE too short for Channel Center Freq Seg 1.")
+		logger.Log.Debug().Interface("parsed_vht_op_fields_in_vht_caps", info.ParsedVHTCaps).Msg("VHT Operation IE Parsed (partially)")
+		return
+	}
+
+	// Basic VHT-MCS and NSS Set (2 bytes) - if present (IE length would be 5)
+	if len(ieData) >= currentIndex+2 {
+		// basicVHTMCSNSS := binary.LittleEndian.Uint16(ieData[currentIndex : currentIndex+2])
+		// This field indicates the set of VHT-MCSs and NSS values that all STAs in the BSS must support for the operating channel width.
+		// Example: For NSS=1, MCS0-7 (bits 0-1), NSS=2, MCS0-7 (bits 2-3) ... NSS=8, MCS0-7 (bits 14-15)
+		// We might not need to store this raw value directly in ParsedVHTCaps unless for very specific analysis.
+		currentIndex += 2
+	}
+
+	logger.Log.Debug().Interface("parsed_vht_op_fields_in_vht_caps", info.ParsedVHTCaps).Msg("VHT Operation IE Parsed")
+}
+
+// (Optional) Placeholder for HE Capabilities and Operation parsing if needed later
+// func parseHECapabilitiesIE(info *ParsedFrameInfo, ieData []byte) {}
+// func parseHEOperationIE(info *ParsedFrameInfo, ieData []byte) {}
+
+// Helper function for RSN IE parsing (Placeholder)
+// ouiAndTypeToString needs to be split for Cipher Suites and AKM Suites for clarity and correctness
+func ouiAndCipherSuiteToString(oui []byte, suiteType byte) string {
+	if len(oui) != 3 {
+		return "InvalidOUI"
+	}
+	// IEEE Std 802.11-2016, Table 9-131—Cipher suite selectors
+	ouiStr := fmt.Sprintf("%02X-%02X-%02X", oui[0], oui[1], oui[2])
+	if ouiStr == "00-0F-AC" { //检查OUI是否为IEEE分配的Cipher/AKM OUI
+		switch suiteType {
+		case 0:
+			return "Use Group Cipher"
+		case 1:
+			return "WEP-40"
+		case 2:
+			return "TKIP"
+		// case 3 is reserved
+		case 4:
+			return "CCMP-128" // AES-CCMP
+		case 5:
+			return "WEP-104"
+		case 6:
+			return "BIP-CMAC-128" // For Management Frames (MFP)
+		case 7:
+			return "Group Addressed Traffic Not Allowed"
+		case 8:
+			return "GCMP-128"
+		case 9:
+			return "GCMP-256"
+		case 10:
+			return "CCMP-256"
+		case 11:
+			return "BIP-GMAC-128"
+		case 12:
+			return "BIP-GMAC-256"
+		case 13:
+			return "BIP-CMAC-256"
+		default:
+			return fmt.Sprintf("Cipher-Unknown(%d)", suiteType)
+		}
+	}
+	return fmt.Sprintf("%s:%d", ouiStr, suiteType) // Non-standard or vendor specific
+}
+
+func ouiAndAKMSuiteToString(oui []byte, suiteType byte) string {
+	if len(oui) != 3 {
+		return "InvalidOUI"
+	}
+	// IEEE Std 802.11-2016, Table 9-134—AKM suite selectors
+	ouiStr := fmt.Sprintf("%02X-%02X-%02X", oui[0], oui[1], oui[2])
+	if ouiStr == "00-0F-AC" { //检查OUI是否为IEEE分配的Cipher/AKM OUI
+		switch suiteType {
+		// case 0 is Reserved
+		case 1:
+			return "802.1X" // IEEE 802.1X AKM
+		case 2:
+			return "PSK" // PSK (Pre-Shared Key) AKM
+		case 3:
+			return "FT-802.1X"
+		case 4:
+			return "FT-PSK"
+		case 5:
+			return "WPA-SHA256-802.1X" // 802.1X with SHA256 KDF
+		case 6:
+			return "WPA-SHA256-PSK" // PSK with SHA256 KDF
+		case 7:
+			return "TDLS"
+		case 8:
+			return "SAE" // Simultaneous Authentication of Equals (WPA3)
+		case 9:
+			return "FT-SAE"
+		case 11:
+			return "OWE" // Opportunistic Wireless Encryption
+		case 12:
+			return "FT-SUITEB-SHA256"
+		case 13:
+			return "FT-SUITEB-SHA384"
+		// Other types exist for FILS, etc.
+		default:
+			return fmt.Sprintf("AKM-Unknown(%d)", suiteType)
+		}
+	}
+	// Add other OUIs if necessary, e.g., Microsoft WPA OUI 00-50-F2, Type 1
+	if ouiStr == "00-50-F2" && suiteType == 1 {
+		return "WPA" // For original WPA (uses TKIP typically, but AKM is WPA)
+	}
+	return fmt.Sprintf("%s:%d", ouiStr, suiteType)
+}
+
+// The existing ouiAndTypeToString can be removed or kept if used elsewhere for generic OUI:Type formatting
+// func ouiAndTypeToString(oui []byte, suiteType byte) string { ... }

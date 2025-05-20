@@ -22,7 +22,6 @@ export namespace config {
 	    log_file: string;
 	    log_level: string;
 	    min_bss_creation_rssi: number;
-	    tshark_path: string;
 	    logging?: LoggingConfig;
 	
 	    static createFrom(source: any = {}) {
@@ -36,7 +35,6 @@ export namespace config {
 	        this.log_file = source["log_file"];
 	        this.log_level = source["log_level"];
 	        this.min_bss_creation_rssi = source["min_bss_creation_rssi"];
-	        this.tshark_path = source["tshark_path"];
 	        this.logging = this.convertValues(source["logging"], LoggingConfig);
 	    }
 	

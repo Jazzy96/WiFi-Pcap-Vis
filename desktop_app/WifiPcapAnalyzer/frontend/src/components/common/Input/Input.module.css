@@ -1,7 +1,8 @@
 .inputContainer {
   display: flex;
   flex-direction: column;
-  margin-bottom: 1rem; /* Add some space between input fields */
+  margin-bottom: 0; /* 减少输入字段之间的间距 */
+  width: 100%;
 }
 
 .label {
@@ -13,20 +14,22 @@
 
 .input,
 select.input { /* Ensure select also gets these base styles */
-  padding: 4px 6px;
+  width: 100%;
+  padding: 6px 8px;
   border: 1px solid #ccc; /* A neutral border color */
-  border-radius: var(--border-radius-base);
+  border-radius: var(--border-radius-base, 4px);
   font-family: var(--font-primary);
-  font-size: 0.75rem;
-  background-color: var(--misty-white);
-  color: var(--graphite-gray);
+  font-size: 13px;
+  background-color: var(--misty-white, #fff);
+  color: var(--graphite-gray, #333);
   transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  box-sizing: border-box; /* 确保padding不会增加宽度 */
 }
 
 .input:focus,
 select.input:focus {
   outline: none;
-  border-color: var(--tech-blue);
+  border-color: var(--tech-blue, #1e90ff);
   box-shadow: 0 0 0 2px rgba(30, 144, 255, 0.2); /* Focus ring with tech-blue */
 }
 

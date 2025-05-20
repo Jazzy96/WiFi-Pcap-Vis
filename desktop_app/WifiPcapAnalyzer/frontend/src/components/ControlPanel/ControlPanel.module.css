@@ -1,51 +1,55 @@
 .controlPanel {
   font-family: var(--font-primary);
   color: var(--text-color-primary-on-light);
-  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  margin-bottom: 0;
+  background-color: var(--card-bg-color, #fff);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  height: 100%;
 }
 
 .panelTitle {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: var(--text-color-primary-on-light);
-  margin: 0 0 8px 0;
-  padding-bottom: 6px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 20%, transparent);
+  padding: 12px 16px;
+  margin: 0;
+  border-bottom: 1px solid var(--border-color, #eee);
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .panelContent {
+  padding: 12px;
   overflow-y: auto;
   flex-grow: 1;
 }
 
 /* 结构化信息区块 */
 .infoSection {
-  background-color: var(--color-misty-white);
-  border-radius: 4px;
-  margin-bottom: 8px;
-  border: 1px solid color-mix(in srgb, var(--color-graphite-gray) 15%, transparent);
-  padding: 6px;
+  margin-bottom: 15px;
+  background-color: var(--section-bg-color, #f9f9f9);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.infoSection:last-child {
+  margin-bottom: 0;
 }
 
 .infoHeader {
-  font-weight: 600;
-  color: var(--color-tech-blue);
-  font-size: 0.85rem;
-  margin-bottom: 6px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-graphite-gray) 10%, transparent);
-  padding-bottom: 3px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color, #eee);
+  font-size: 14px;
 }
 
 /* 参数网格 */
 .paramsGrid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 8px;
-  position: relative;
-  padding-bottom: 35px; /* 为按钮留出空间 */
 }
 
 .paramRow {
@@ -55,43 +59,52 @@
 }
 
 .paramLabel {
+  margin-bottom: 4px;
   font-weight: 500;
-  color: var(--text-color-primary-on-light);
-  font-size: 0.75rem;
-  margin-bottom: 2px;
+  font-size: 13px;
 }
 
 .paramValue {
-  display: flex;
-  flex-direction: column;
+  width: 100%;
 }
 
-/* 更新下拉选单样式，使其更扁平化 */
+/* 输入框样式 */
+.textInput {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+/* 下拉选择框样式 */
 .selectInput {
-  flex-grow: 1;
-  padding: 3px 6px;
-  border: 1px solid #d9d9d9; /* 更柔和的边框颜色 */
-  border-radius: 2px; /* 更小的圆角半径，更扁平 */
-  font-size: 0.75rem;
-  background-color: #fafafa; /* 浅灰背景，增强扁平感 */
-  color: #333333; /* 深色文本，提高可读性 */
-  box-shadow: none; /* 移除阴影 */
-  appearance: none; /* 移除默认外观 */
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+  font-size: 13px;
+  background-color: #fafafa;
+  color: #333333;
+  box-shadow: none;
+  appearance: none;
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23595959' d='M6 8.824l4.432-4.432 1.39 1.39-5.822 5.822-5.822-5.822 1.39-1.39z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 6px center;
-  padding-right: 24px; /* 为下拉箭头留出空间 */
+  padding-right: 24px;
   transition: border-color 0.2s ease-in-out;
+  margin-bottom: 2px;
 }
 
 .selectInput:hover {
-  border-color: #bfbfbf; /* 悬停时边框变深 */
+  border-color: #bfbfbf;
 }
 
 .selectInput:focus {
   outline: none;
-  border-color: #40a9ff; /* 聚焦时突出边框 */
-  box-shadow: none; /* 保持无阴影 */
+  border-color: #40a9ff;
+  box-shadow: none;
 }
 
 .selectInput:disabled {
@@ -103,149 +116,105 @@
 
 /* 更新按钮容器 */
 .configButtonContainer {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  margin-bottom: 3px; /* 底部间距 */
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 
 /* 更新设置按钮样式 */
 .configButton {
-  padding: 2px 5px;
-  font-size: 0.7rem;
+  padding: 6px 12px;
+  font-size: 13px;
   white-space: nowrap;
-  border-radius: 2px; /* 更小的圆角 */
-  background-color: #2D3748; /* 深蓝灰色替代蓝色 */
-  color: white;
-  border: 1px solid #4A5568; /* 稍微深一点的边框 */
-  cursor: pointer;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* 微妙的阴影效果 */
-}
-
-.configButton:hover:not(:disabled) {
-  background-color: #4A5568; /* 悬停时变亮 */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15); /* 增强阴影 */
-}
-
-.configButton:active:not(:disabled) {
-  background-color: #1A202C; /* 点击时变深 */
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2); /* 内部阴影效果 */
-}
-
-.configButton:disabled {
-  background-color: #f5f5f5; /* 禁用时使用浅灰色 */
-  border: 1px solid #d9d9d9;
-  color: #bfbfbf;
-  cursor: not-allowed;
+  border-radius: 4px;
 }
 
 /* 抓包状态显示 */
 .captureStatus {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   margin-bottom: 12px;
-  gap: 10px;
 }
 
 .statusLabel {
   font-weight: 500;
-  font-size: 0.85rem;
-  color: var(--text-color-primary-on-light);
+  margin-bottom: 4px;
+  font-size: 13px;
 }
 
 .statusValue {
-  font-size: 0.85rem;
   padding: 4px 8px;
-  border-radius: 2px; /* 与其他元素保持一致 */
+  border-radius: 4px;
+  text-align: center;
   font-weight: 500;
-  display: inline-flex;
-  align-items: center;
+  font-size: 13px;
+  margin-bottom: 8px;
 }
 
 .capturing {
-  background-color: #f6ffed; /* 浅绿色背景 */
-  border: 1px solid #b7eb8f;
-  color: #52c41a; /* 绿色文本 */
+  background-color: #d4edda;
+  color: #155724;
 }
 
 .notCapturing {
-  background-color: #f5f5f5; /* 浅灰色背景 */
-  border: 1px solid #d9d9d9;
-  color: #8c8c8c; /* 灰色文本 */
+  background-color: #f8d7da;
+  color: #721c24;
 }
 
-.statusValue::before {
-  content: '';
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 6px;
+.connected {
+  background-color: #d4edda; /* 绿色背景 */
+  color: #155724;
 }
 
-.capturing::before {
-  background-color: #52c41a; /* 绿色圆点 */
-}
-
-.notCapturing::before {
-  background-color: #bfbfbf; /* 灰色圆点 */
+.disconnected {
+  background-color: #f8d7da; /* 红色背景 */
+  color: #721c24;
 }
 
 /* 按钮样式 */
 .actionButtons {
-  margin-top: 8px;
+  display: flex;
+  justify-content: center;
 }
 
 .actionButton {
-  width: 100%;
-  padding: 4px 8px;
-  font-weight: 500; /* 稍微减轻字重 */
-  font-size: 0.75rem;
-  border-radius: 2px; /* 更小的圆角，与其他元素保持一致 */
-  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* 微妙的阴影效果 */
+  transition: background-color 0.2s;
+  width: 100%;
+  font-size: 13px;
 }
 
 .start {
-  background-color: #276749; /* 深绿色替代蓝色 */
+  background-color: var(--primary-color, #1e90ff);
   color: white;
-  border: 1px solid #38A169; /* 稍微亮一点的边框 */
-}
-
-.start:hover:not(:disabled) {
-  background-color: #38A169; /* 悬停时变亮 */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15); /* 增强阴影 */
-}
-
-.start:active:not(:disabled) {
-  background-color: #1C4532; /* 点击时变深 */
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2); /* 内部阴影效果 */
 }
 
 .stop {
-  background-color: #C53030; /* 深红色替代亮红色 */
+  background-color: var(--danger-color, #dc3545);
   color: white;
-  border: 1px solid #E53E3E; /* 稍微亮一点的边框 */
 }
 
-.stop:hover:not(:disabled) {
-  background-color: #E53E3E; /* 悬停时变亮 */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15); /* 增强阴影 */
+.start:hover {
+  background-color: var(--primary-hover, #007bff);
 }
 
-.stop:active:not(:disabled) {
-  background-color: #9B2C2C; /* 点击时变深 */
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2); /* 内部阴影效果 */
+.stop:hover {
+  background-color: var(--danger-hover, #c82333);
 }
 
-.actionButton:disabled {
-  background-color: #f5f5f5;
-  border: 1px solid #d9d9d9;
-  color: #bfbfbf;
+.start:disabled,
+.stop:disabled {
+  background-color: #ccc;
   cursor: not-allowed;
+}
+
+.connectButton {
+  padding: 6px 12px;
+  min-width: 80px;
+  font-size: 13px;
 }
 
 /* 响应式调整 */

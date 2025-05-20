@@ -15,8 +15,8 @@
 .App-main {
   flex-grow: 1;
   display: grid;
-  /* 四列布局: ControlPanel (固定), BssList (固定), StaList (固定), PerformancePanel (自适应) */
-  grid-template-columns: 160px 350px 350px 1fr;
+  /* 四列布局: ControlPanel, BssList, StaList, PerformancePanel (自适应) */
+  grid-template-columns: 280px 350px 350px 1fr;
   gap: 8px;
   padding: 8px;
   width: 100%;
@@ -43,9 +43,9 @@
 /* 控制面板容器 */
 .control-panel-container {
   grid-column: 1 / 2;
-  width: 160px; /* 固定宽度 */
-  min-width: 160px; /* 最小宽度 */
-  max-width: 160px; /* 最大宽度 */
+  width: 280px; /* 增加固定宽度 */
+  min-width: 280px; /* 增加最小宽度 */
+  max-width: 280px; /* 增加最大宽度 */
   background-color: var(--color-misty-white);
   padding: 10px;
   border-radius: var(--border-radius-base);
@@ -197,18 +197,18 @@
 
 /* 无性能面板时的三列布局 */
 .App-main.no-performance-panel {
-  grid-template-columns: 160px 350px 1fr;
+  grid-template-columns: 280px 350px 1fr;
 }
 
 @media (max-width: 1400px) {
   .App-main.no-performance-panel {
-    grid-template-columns: 160px 320px 1fr;
+    grid-template-columns: 280px 320px 1fr;
   }
 }
 
 @media (max-width: 950px) {
   .App-main.no-performance-panel {
-    grid-template-columns: 160px 1fr;
+    grid-template-columns: 280px 1fr;
   }
 }
 

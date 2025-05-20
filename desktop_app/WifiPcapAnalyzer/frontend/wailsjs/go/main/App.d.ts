@@ -3,9 +3,17 @@
 import {config} from '../models';
 import {state_manager} from '../models';
 
+export function ConnectToAgent(arg1:string):Promise<void>;
+
+export function DisconnectFromAgent():Promise<void>;
+
 export function GetAppConfig():Promise<config.AppConfig>;
 
 export function GetCurrentSnapshot():Promise<state_manager.Snapshot>;
+
+export function IsConnected():Promise<boolean>;
+
+export function SelectPcapFileAndProcess():Promise<string>;
 
 export function StartCapture(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
 

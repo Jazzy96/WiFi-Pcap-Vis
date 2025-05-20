@@ -14,7 +14,6 @@ type AppConfig struct {
 	LogFile            string         `json:"log_file"`  // Deprecated by LoggingConfig
 	LogLevel           string         `json:"log_level"` // Deprecated by LoggingConfig
 	MinBSSCreationRSSI int            `json:"min_bss_creation_rssi"`
-	TsharkPath         string         `json:"tshark_path"` // Path to tshark executable
 	Logging            *LoggingConfig `json:"logging,omitempty"`
 }
 
@@ -27,10 +26,9 @@ type LoggingConfig struct {
 
 // DefaultConfig provides a default configuration.
 var DefaultConfig = AppConfig{
-	GRPCServerAddress:  "192.168.110.1:50051", // Default gRPC server address
+	GRPCServerAddress:  "192.168.6.250:50051", // Default gRPC server address
 	WebSocketAddress:   "0.0.0.0:8080",        // Default WebSocket server address
 	MinBSSCreationRSSI: -84,                   // Default minimum RSSI for BSS creation
-	TsharkPath:         "tshark",              // Default tshark path (assumes it's in PATH)
 	Logging: &LoggingConfig{
 		Level:   "info",
 		Console: func(b bool) *bool { return &b }(true), // Default console to true
@@ -91,10 +89,6 @@ func LoadConfig(filePath string) AppConfig {
 	if cfg.MinBSSCreationRSSI == 0 {
 		cfg.MinBSSCreationRSSI = DefaultConfig.MinBSSCreationRSSI
 		log.Printf("MinBSSCreationRSSI not found or set to 0 in config, using default value: %d\n", DefaultConfig.MinBSSCreationRSSI)
-	}
-	if cfg.TsharkPath == "" {
-		cfg.TsharkPath = DefaultConfig.TsharkPath
-		log.Printf("TsharkPath not found in config, using default value: %s\n", DefaultConfig.TsharkPath)
 	}
 	if cfg.Logging == nil {
 		cfg.Logging = DefaultConfig.Logging

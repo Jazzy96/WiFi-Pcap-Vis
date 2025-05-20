@@ -14,6 +14,7 @@ interface AppState {
   isCapturing: boolean; // New state for capture status
   isPanelCollapsed: boolean; // New state for panel collapse
   selectedPerformanceTarget: { type: 'bss'; id: string } | { type: 'sta'; id: string } | null; // For PerformanceDetailPanel
+  isConnected: boolean; // 新增连接状态
 }
 
 type Action =
@@ -25,7 +26,8 @@ type Action =
   | { type: 'SET_SELECTED_BSSID_FOR_STA_LIST'; payload: string | null }
   | { type: 'SET_IS_CAPTURING'; payload: boolean } // New action for capture status
   | { type: 'SET_PANEL_COLLAPSED'; payload: boolean } // New action for panel collapse
-  | { type: 'SET_SELECTED_PERFORMANCE_TARGET'; payload: { type: 'bss'; id: string } | { type: 'sta'; id: string } | null }; // For PerformanceDetailPanel
+  | { type: 'SET_SELECTED_PERFORMANCE_TARGET'; payload: { type: 'bss'; id: string } | { type: 'sta'; id: string } | null } // For PerformanceDetailPanel
+  | { type: 'SET_IS_CONNECTED'; payload: boolean }; // 新增连接状态action
 
 const initialState: AppState = {
   bssList: [],
@@ -36,6 +38,7 @@ const initialState: AppState = {
   isCapturing: false, // Initialize capture status
   isPanelCollapsed: false, // Default to not collapsed
   selectedPerformanceTarget: null, // Initialize selected performance target
+  isConnected: false, // 初始化连接状态为未连接
 };
 
 const AppStateContext = createContext<AppState | undefined>(undefined);
@@ -235,6 +238,12 @@ const appReducer = (state: AppState, action: Action): AppState => {
         ...state,
         selectedPerformanceTarget: action.payload,
       };
+    case 'SET_IS_CONNECTED': // 新增连接状态处理
+      console.log("Setting isConnected to:", action.payload);
+      return {
+        ...state,
+        isConnected: action.payload,
+      };
     default:
       return state;
   }
@@ -248,33 +257,37 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     console.log("Setting up Wails event listeners...");
 
     const cleanupSnapshot = EventsOn('state_snapshot', (snapshot: state_manager.Snapshot) => {
-      // console.log("Received Wails event 'state_snapshot':", snapshot);
+      // console.log("Received state_snapshot event:", snapshot);
       dispatch({ type: 'SET_SNAPSHOT_DATA', payload: snapshot });
     });
 
-    const cleanupStatus = EventsOn('capture_status', (status: string) => {
-      console.log("Received Wails event 'capture_status':", status);
+    // Listen for capture status events
+    const cleanupCaptureStatus = EventsOn('capture_status', (status: string) => {
+      console.log("Received capture_status event:", status);
       dispatch({ type: 'SET_IS_CAPTURING', payload: status === 'started' });
     });
 
-     const cleanupError = EventsOn('error', (errorMessage: string) => {
-        console.error("Received Wails event 'error':", errorMessage);
-        // Optionally dispatch an action to show the error in the UI
-        // dispatch({ type: 'SET_ERROR_MESSAGE', payload: errorMessage });
+    // Listen for connection status events
+    const cleanupConnectionStatus = EventsOn('connection_status', (status: string) => {
+      console.log("Received connection_status event:", status);
+      dispatch({ type: 'SET_IS_CONNECTED', payload: status === 'connected' });
     });
 
-    // Cleanup function to remove listeners when component unmounts
+    // Listen for error events
+    const cleanupError = EventsOn('error', (errorMsg: string) => {
+      console.error("Received error event:", errorMsg);
+      // Optionally show an error toast/notification or update error state
+    });
+
+    // Return cleanup function
     return () => {
-      console.log("Cleaning up Wails event listeners...");
-      // Wails runtime automatically handles cleanup for listeners
-      // returned by EventsOn when the component unmounts if using
-      // the function reference directly. If using an intermediate
-      // function, you might need manual cleanup, but the direct way is preferred.
-      // cleanupSnapshot(); // Example if manual cleanup were needed
-      // cleanupStatus();
-      // cleanupError();
+      cleanupSnapshot();
+      cleanupCaptureStatus();
+      cleanupConnectionStatus();
+      cleanupError();
+      console.log("Cleaned up Wails event listeners.");
     };
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, []);
 
   return (
     <AppStateContext.Provider value={state}>
