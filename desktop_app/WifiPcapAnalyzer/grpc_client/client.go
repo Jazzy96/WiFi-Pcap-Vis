@@ -28,10 +28,13 @@ type CaptureAgentClient struct {
 // Connect establishes a connection to the gRPC server.
 func Connect(serverAddr string) (*CaptureAgentClient, error) {
 	logger.Log.Debug().Msgf("Attempting to connect to gRPC server at %s", serverAddr)
-	conn, err := grpc.NewClient(serverAddr,
+	// Use DialContext with a timeout to avoid hanging forever if the server is unreachable
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(ctx, serverAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		// grpc.WithBlock(), // grpc.WithBlock() is deprecated, use a timeout context with DialContext instead if needed.
-		// For simplicity, using Dial which is non-blocking by default. Connection state can be checked.
+		grpc.WithBlock(),
 	)
 	if err != nil {
 		logger.Log.Error().Err(err).Msgf("Failed to dial gRPC server")
