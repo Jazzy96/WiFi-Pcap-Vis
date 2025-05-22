@@ -1,4 +1,4 @@
-# WiFi Pcap分析项目背景文档
+# WiFi Pcap分析项目
 
 ## 1. 项目整体背景和目标
 
@@ -176,7 +176,7 @@ PC端实时分析引擎是项目的核心组件，负责接收和解析802.11帧
 
 * **语言**：Go (Golang)
 * **应用框架**：Wails (v2.5+)，提供Go和前端JavaScript集成
-* **帧解析**：使用`tshark`命令行工具解析PCAP数据
+* **帧解析**：使用`gopacket`命令行工具解析PCAP数据
 * **gRPC客户端**：`google.golang.org/grpc`
 * **日志管理**：`github.com/rs/zerolog`
 * **并发控制**：使用Go原生sync包和context包
@@ -186,7 +186,7 @@ PC端实时分析引擎是项目的核心组件，负责接收和解析802.11帧
 * **配置管理**（`config/config.go` & `config/config.json`）：
   - 加载和管理应用配置
   - 提供默认配置值和配置合并
-  - 配置项包括gRPC服务器地址、日志级别、tshark路径、最小BSS创建信号强度等
+  - 配置项包括gRPC服务器地址、日志级别、最小BSS创建信号强度等
 
 * **gRPC客户端**（`grpc_client/client.go`）：
   - 连接到路由器端抓包代理
@@ -195,10 +195,9 @@ PC端实时分析引擎是项目的核心组件，负责接收和解析802.11帧
   - 实现错误处理与上下文取消
 
 * **帧解析器**（`frame_parser/parser.go`）：
-  - `TSharkExecutor`：管理tshark子进程和数据流
-  - `CSVParser`：解析tshark输出的CSV格式数据
-  - `FrameProcessor`：将CSV行转换为结构化的ParsedFrameInfo对象
+  - `GoPacketParser`：直接使用gopacket库解析802.11帧
   - 支持HT/VHT/HE能力解析，提取物理层和MAC层参数
+  - 解析802.11管理帧中的信息元素(IE)，包括SSID、安全参数等
   - 实现PHY速率计算与帧传输时间估算
 
 * **状态管理器**（`state_manager/manager.go` & `models.go`）：
@@ -224,32 +223,20 @@ PC端实时分析引擎是项目的核心组件，负责接收和解析802.11帧
 
 1. **数据接收**：
    - gRPC客户端通过StreamPackets RPC调用从路由器接收PCAP数据流
-   - 数据通过io.Pipe传递给tshark解析器
+   - 数据通过gopacket.PacketSource传递给解析器
 
-2. **tshark处理**：
-   - 使用命令格式：`tshark -r - -T fields -E header=y -E separator=, -E quote=d -E occurrence=a -e <field1> -e <field2> ...`
-   - `-r -`参数使tshark从标准输入读取PCAP数据
-   - 指定约70个关键802.11字段，包括帧头信息、管理帧元素、QoS参数等
-   - 输出结构化的CSV格式数据
+2. **帧解析**：
+   - 使用gopacket库直接解析PCAP数据
+   - 提取802.11帧的Radiotap头部和数据字段
+   - 解析管理帧信息元素，如SSID、安全参数、速率能力
+   - 生成结构化的ParsedFrameInfo对象
 
-3. **CSV解析**：
-   - 首行解析为列名映射（HeaderMap），便于后续按名称访问字段
-   - 逐行解析CSV数据为字段名到值的映射（map[string]string）
-   - 处理多值字段和类型转换（字符串、整数、MAC地址等）
-
-4. **帧处理**：
-   - FrameProcessor将字段映射转换为结构化的ParsedFrameInfo对象
-   - 解析帧类型、MAC地址、信号强度、信道、带宽等基本信息
-   - 提取HT/VHT/HE能力信息，解析安全参数
-   - 计算PHY速率和传输时间估算
-   - 处理特殊字段如SSID（可能为隐藏或需要解码）
-
-5. **状态更新**：
+3. **状态更新**：
    - 处理后的帧信息通过回调传递给StateManager的ProcessParsedFrame方法
    - 根据帧类型（管理、控制或数据）和子类型进行不同处理
    - 更新BSS和STA状态，处理关联关系变更
    - 累积字节计数和传输时间用于性能指标计算
-   - 定期（默认1秒）计算和更新性能指标
+   - 定期计算和更新性能指标
 
 #### 3.2.4 关键数据结构
 
@@ -280,7 +267,7 @@ PC端实时分析引擎是项目的核心组件，负责接收和解析802.11帧
       TransportPayloadLength int                // 传输层负载长度
       MACDurationID          uint16             // MAC层持续时间/ID字段
       RetryFlag              bool               // 重传标志位
-      RawFields              map[string]string  // 原始tshark字段
+      RawFields              map[string]string  // 原始gopacket字段
   }
   ```
 
@@ -685,7 +672,7 @@ desktop_app/WifiPcapAnalyzer/frontend/
       │                     │ 帧数据(CaptureData) │
       │                     │◄────────────────────┤
       │                     │                     │
-      │                     │ 使用tshark解析帧    │
+      │                     │ 使用gopacket解析帧    │
       │                     ├─────────────────────┤
       │                     │                     │
       │                     │ 更新BSS/STA状态     │
@@ -766,7 +753,6 @@ desktop_app/WifiPcapAnalyzer/frontend/
   - Go 1.20+
   - Wails框架 (v2.5+)
   - Node.js (v18+)与npm/yarn
-  - `tshark` 命令行工具 (Wireshark CLI)
   - Protobuf编译器 (`protoc`)
   - Go Protobuf插件 (`protoc-gen-go`, `protoc-gen-go-grpc`)
 
@@ -845,11 +831,6 @@ desktop_app/WifiPcapAnalyzer/frontend/
 * **PCAP文件测试**：
   使用配置文件中的`test_pcap_file`选项，允许从文件加载PCAP数据，而不是实时抓包。
 
-* **查看tshark输出**：
-  ```bash
-  tshark -r capture.pcap -T fields -E header=y -E separator=, -E quote=d -e frame.time_epoch -e radiotap.channel.freq -e wlan.sa | head
-  ```
-
 * **日志级别调整**：
   修改配置文件中的`log_level`参数为"debug"以获取详细日志。
 
@@ -878,10 +859,6 @@ desktop_app/WifiPcapAnalyzer/frontend/
   - 检查service和package名称是否一致
 
 #### 6.4.2 PC端分析引擎问题
-
-* **tshark字段解析错误**：
-  - 验证字段名是否正确（使用`tshark -G fields`查看所有字段）
-  - 确保使用正确的tshark版本
 
 * **性能指标显示为"N/A"**：
   - 检查是否正确初始化`lastCalcTime`
